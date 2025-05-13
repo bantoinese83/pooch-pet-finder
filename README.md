@@ -2,6 +2,10 @@
 
 ![GitHub Repo stars](https://img.shields.io/github/stars/bantoinese83/pooch-pet-finder?style=social)
 ![GitHub last commit](https://img.shields.io/github/last-commit/bantoinese83/pooch-pet-finder)
+![GitHub issues](https://img.shields.io/github/issues/bantoinese83/pooch-pet-finder)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/bantoinese83/pooch-pet-finder)
+![License: MIT](https://img.shields.io/github/license/bantoinese83/pooch-pet-finder)
+<!-- ![Build Status](https://img.shields.io/badge/build-passing-brightgreen) -->
 
 ---
 
