@@ -37,29 +37,46 @@ Pooch Pet Finder is a modern, full-stack web application designed to help reunit
 
 ---
 
-## 🏗️ Architecture
+## ��️ Architecture
 
-### System Overview
+### Full System Overview
 
 ```mermaid
 flowchart TD
-  A[User Browser / Device]
-  B[Next.js Frontend: App Router, React]
-  C[Supabase Backend]
-  D[Supabase Auth]
-  E[Supabase Database]
-  F[Supabase Storage]
-  G[Edge Functions / API]
+  U[User (Web/Mobile)]
+  F[Next.js Frontend: App Router, React, Tailwind, framer-motion]
+  CDN[CDN / Static Assets]
+  S[Supabase Backend]
+  SA[Supabase Auth]
+  SD[Supabase Database]
+  SS[Supabase Storage]
+  EF[Edge Functions / API]
+  TP[Third-party APIs (Email, SMS, Image Recognition, etc.)]
+  AA[Admin & Analytics (Supabase Studio, Vercel, etc.)]
 
-  A -- HTTP/HTTPS --> B
-  B -- REST/Realtime --> C
-  C -- Auth --> D
-  C -- DB --> E
-  C -- Storage --> F
-  B -- API Calls --> G
-  G -- DB/Storage --> E
-  G -- Auth --> D
+  U -- HTTP/HTTPS --> F
+  F -- Static Files --> CDN
+  F -- REST/Realtime --> S
+  F -- API Calls --> EF
+  S -- Auth --> SA
+  S -- DB --> SD
+  S -- Storage --> SS
+  EF -- DB/Storage --> SD
+  EF -- Auth --> SA
+  EF -- Third-party --> TP
+  F -- Analytics --> AA
+  S -- Admin/Studio --> AA
+  CDN -- Delivers --> U
 ```
+
+#### Explanation
+- **User**: Interacts via browser or mobile device.
+- **Next.js Frontend**: Handles UI, routing, and client logic. Fetches data from Supabase and Edge Functions.
+- **CDN/Static Assets**: Delivers images, JS, CSS, and static files for fast global access.
+- **Supabase Backend**: Provides authentication, database, and storage services.
+- **Edge Functions/API**: Handles server-side logic, integrations, and custom endpoints.
+- **Third-party APIs**: Used for email, SMS, image recognition, and other integrations.
+- **Admin & Analytics**: Monitoring, analytics, and admin tools (Supabase Studio, Vercel dashboard, etc.).
 
 ---
 
