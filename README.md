@@ -22,7 +22,22 @@ Pooch Pet Finder is a modern, full-stack web application designed to help reunit
 - 🚨 **Emergency & Volunteer Requests** — Request help or offer to volunteer
 - 🏠 **Shelter Dashboard** — Manage pets and shelter information
 - 📊 **Dynamic Dashboard** — Animated stats, recent activity feed, and notifications
+- 🤖 **Hybrid AI Pet Matching** — Combines AWS Rekognition and Google Gemini image understanding for the most accurate lost/found pet matches
+- 💬 **AI Help Center** — Ask any question about POOCH Pet Finder and get instant, context-aware answers from our advanced AI
 - 📱 **Responsive UI** — Mobile-friendly, accessible, and modern design
+
+---
+
+## 🤖 AI & Image Recognition
+
+POOCH Pet Finder uses a hybrid AI approach for pet matching:
+
+- **AWS Rekognition**: Detects faces and visual features in pet photos, providing robust image similarity and label-based matching.
+- **Google Gemini**: Analyzes pet images to generate detailed descriptions and tags, enhancing match accuracy with generative AI.
+- **Hybrid Scoring**: The system blends both AI results for the most reliable, explainable matches.
+
+### AI Help Center
+- The Help Center's AI assistant is always up to date with the app's features, mission, and FAQ. It can answer any question about POOCH Pet Finder, using a combination of app documentation, FAQ, and blog content for context.
 
 ---
 
@@ -116,6 +131,7 @@ flowchart TD
 - View and manage your reports from the dashboard
 - Respond to emergency or volunteer requests
 - Shelters can manage pets and update their information
+- Use the Help Center to ask any question about the app and get instant AI-powered answers
 
 ---
 
