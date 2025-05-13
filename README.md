@@ -37,13 +37,13 @@ Pooch Pet Finder is a modern, full-stack web application designed to help reunit
 
 ---
 
-## ��️ Architecture
+## 🏗️ Architecture
 
 ### Full System Overview
 
 ```mermaid
 flowchart TD
-  U[User (Web/Mobile)]
+  U[User Web/Mobile]
   F[Next.js Frontend: App Router, React, Tailwind, framer-motion]
   CDN[CDN / Static Assets]
   S[Supabase Backend]
@@ -51,8 +51,8 @@ flowchart TD
   SD[Supabase Database]
   SS[Supabase Storage]
   EF[Edge Functions / API]
-  TP[Third-party APIs (Email, SMS, Image Recognition, etc.)]
-  AA[Admin & Analytics (Supabase Studio, Vercel, etc.)]
+  TP[Third-party APIs: Email, SMS, Image Recognition, etc.]
+  AA[Admin & Analytics: Supabase Studio, Vercel, etc.]
 
   U -- HTTP/HTTPS --> F
   F -- Static Files --> CDN
