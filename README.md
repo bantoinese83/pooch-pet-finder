@@ -40,7 +40,7 @@ Pooch Pet Finder is a modern, full-stack web application designed to help reunit
 ```mermaid
 flowchart TD
   A[User Browser / Device]
-  B[Next.js Frontend (App Router, React)]
+  B[Next.js Frontend: App Router, React]
   C[Supabase Backend]
   D[Supabase Auth]
   E[Supabase Database]
