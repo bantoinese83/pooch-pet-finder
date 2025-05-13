@@ -53,6 +53,7 @@ export async function POST(request: Request) {
     const coordinates = formData.get("coordinates") ? JSON.parse(formData.get("coordinates") as string) : null
     const description = formData.get("description") as string
     const lastSeenDate = (formData.get("lastSeenDate") as string) || new Date().toISOString().split("T")[0]
+    const reward = formData.get("reward") ? Number(formData.get("reward")) : null
 
     const searchId = uuidv4()
     const arrayBuffer = await image.arrayBuffer()
@@ -88,6 +89,7 @@ export async function POST(request: Request) {
       description,
       distinctive_features: distinctiveFeatures,
       last_seen_date: lastSeenDate,
+      reward,
       status: "active",
       created_at: new Date().toISOString(),
       user_id: userId,
@@ -149,14 +151,14 @@ export async function POST(request: Request) {
           await supabase.from("notifications").insert({
             user_id: userId,
             type: "match",
-            message: "A potential match was found for your lost pet!",
+            message: `A potential match was found for your lost pet!${reward && reward > 0 ? ` Reward Offered: $${reward}` : ''}`,
           })
         }
         if (pet.user_id) {
           await supabase.from("notifications").insert({
             user_id: pet.user_id,
             type: "match",
-            message: "A potential match was found for your found pet!",
+            message: `A potential match was found for your found pet!${reward && reward > 0 ? ` Reward Offered: $${reward}` : ''}`,
           })
         }
         matches.push(pet.id)

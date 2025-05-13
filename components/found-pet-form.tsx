@@ -4,7 +4,7 @@ import React from "react"
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Upload, Loader2, Camera, X, Calendar, MapPin, Info, Sparkles, HelpCircle } from "lucide-react"
+import { Upload, Loader2, Camera, X, Calendar, MapPin, Info, Sparkles, HelpCircle, Lightbulb, Send, Bot, Bell, LayoutDashboard, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -23,6 +23,44 @@ import Link from "next/link"
 
 const isMobile = typeof window !== "undefined" && /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent)
 const Webcam = dynamic(() => import("react-webcam"), { ssr: false })
+
+// Helper: map AI tags and description to form fields, robustly inferring petType from breed if needed
+function mapTagsToFormFields(tags: string[], desc: string) {
+  const lowerTags = tags.map(t => t.toLowerCase())
+  // Pet type
+  let petType = petTypes.find(type => lowerTags.includes(type.label.toLowerCase()) || lowerTags.includes(type.value))?.value || ""
+  // Breeds (try to detect even if petType is not set)
+  let breeds: string[] = []
+  let detectedBreedType: string | null = null
+  for (const type of petTypes) {
+    const breedList = getBreedsByPetType(type.value)
+    const foundBreeds = breedList.filter(breed => lowerTags.includes(breed.label.toLowerCase()) || lowerTags.includes(breed.value) || desc.toLowerCase().includes(breed.label.toLowerCase()))
+    if (foundBreeds.length) {
+      breeds = foundBreeds.map(b => b.value)
+      detectedBreedType = type.value
+      break
+    }
+  }
+  // If breed detected but petType not set, infer petType from breed
+  if (!petType && detectedBreedType) {
+    petType = detectedBreedType
+  }
+  // Colors
+  const colors = petColors.filter(color => lowerTags.includes(color.label.toLowerCase()) || lowerTags.includes(color.value) || desc.toLowerCase().includes(color.label.toLowerCase())).map(c => c.value)
+  // Name: try to extract from desc (e.g., "This is <name>.")
+  let petName = ""
+  const nameMatch = desc.match(/(?:named|name is|this is|meet) ([A-Z][a-zA-Z]+)/i)
+  if (nameMatch) petName = nameMatch[1]
+  // Size
+  const size = petSizes.find(s => lowerTags.includes(s.label.toLowerCase()) || desc.toLowerCase().includes(s.label.toLowerCase()))?.value || ""
+  // Age
+  const age = petAges.find(a => lowerTags.includes(a.label.toLowerCase()) || desc.toLowerCase().includes(a.label.toLowerCase()))?.value || ""
+  // Gender
+  const gender = petGenders.find(g => lowerTags.includes(g.label.toLowerCase()) || desc.toLowerCase().includes(g.label.toLowerCase()))?.value || ""
+  // Distinctive Features
+  const distinctiveFeatures = petFeatures.filter(f => lowerTags.includes(f.label.toLowerCase()) || desc.toLowerCase().includes(f.label.toLowerCase())).map(f => f.value)
+  return { petType, colors, breeds, petName, size, age, gender, distinctiveFeatures }
+}
 
 export function FoundPetForm() {
   const router = useRouter()
@@ -54,6 +92,7 @@ export function FoundPetForm() {
   const [showCameraModal, setShowCameraModal] = useState(false)
   const webcamRef = React.useRef(null)
   const [user, setUser] = useState<unknown | null>(null)
+  const [rewardClaim, setRewardClaim] = useState<string>("")
 
   // Update available breeds when pet type changes
   useEffect(() => {
@@ -200,6 +239,11 @@ export function FoundPetForm() {
 
       formData.append("description", description)
 
+      // Add reward claim if available
+      if (rewardClaim) {
+        formData.append("rewardClaim", rewardClaim)
+      }
+
       // Upload to API
       const response = await fetch("/api/found-pet", {
         method: "POST",
@@ -345,10 +389,56 @@ export function FoundPetForm() {
             )}
             {file && (
               <div className="flex items-center gap-2 mt-2">
-                <Button type="button" variant="outline" size="sm" className="text-amber-600 border-amber-300" disabled={aiLoading} onClick={async () => { setAiLoading(true); setAiError(null); try { const reader = new FileReader(); reader.onload = async (e) => { const base64 = (e.target?.result as string)?.split(",")[1]; if (base64) { const aiText = await generatePetDescriptionFromImage(base64); const [desc, tags] = aiText.split("Tags:"); setDescription(desc.trim()); } }; reader.readAsDataURL(file); } catch (err) { setAiError("AI description failed. Please try again."); } finally { setAiLoading(false); } }}>
+                <Button type="button" variant="outline" size="sm" className="text-amber-600 border-amber-300" disabled={aiLoading} onClick={async () => {
+                  setAiLoading(true)
+                  setAiError(null)
+                  try {
+                    const reader = new FileReader()
+                    reader.onload = async (e) => {
+                      const base64 = (e.target?.result as string)?.split(",")[1]
+                      if (base64) {
+                        const aiText = await generatePetDescriptionFromImage(base64)
+                        if (!aiText) return
+                        // Robustly extract description and tags
+                        let desc = aiText
+                        let tagsRaw = ""
+                        const tagMatch = aiText.match(/Tags?:\s*([\s\S]*)/i)
+                        if (tagMatch) {
+                          desc = aiText.slice(0, tagMatch.index).trim()
+                          tagsRaw = tagMatch[1].replace(/\n/g, " ").trim()
+                        }
+                        if (!desc) desc = ""
+                        // Clean up description: remove markdown, headings, boilerplate, and structured lines
+                        desc = desc.replace(/(^|\n)(here'?s a description[^\n]*:|\*\*description:?\*\*|description:|\*\*|\*|^\s*\n)/gi, "")
+                          .replace(/\*\*/g, "")
+                          .replace(/\n+/g, " ")
+                          .replace(/^(Breed|Color|Markings|Unique Features|Features|Distinctive Features):[^\n]*$/gim, "")
+                          .replace(/\s{2,}/g, " ")
+                          .replace(/^\s+|\s+$/g, "")
+                        setDescription(desc.trim())
+                        if (tagsRaw) {
+                          const tags = tagsRaw.split(",").map(t => t.trim())
+                          const { petType: aiPetType, colors: aiColors, breeds: aiBreeds, petName: aiPetName, size: aiSize, age: aiAge, gender: aiGender, distinctiveFeatures: aiFeatures } = mapTagsToFormFields(tags, desc)
+                          if (aiPetType) setPetType(aiPetType)
+                          if (aiBreeds.length) setBreeds(aiBreeds)
+                          if (aiColors.length) setColors(aiColors)
+                          if (aiSize) setSize(aiSize)
+                          if (aiAge) setAge(aiAge)
+                          if (aiGender) setGender(aiGender)
+                          if (aiFeatures.length) setDistinctiveFeatures(aiFeatures)
+                        }
+                      }
+                    }
+                    reader.readAsDataURL(file)
+                  } catch (err) {
+                    setAiError("AI description failed. Please try again.")
+                  } finally {
+                    setAiLoading(false)
+                  }
+                }}>
                   {aiLoading ? "Generating..." : <><Sparkles className="h-4 w-4 mr-1" /> Let AI describe the pet</>}
                 </Button>
-                <HelpCircle className="h-4 w-4 text-gray-400" title="AI will analyze your photo and suggest a detailed description." />
+                <HelpCircle className="h-4 w-4 text-gray-400" />
               </div>
             )}
             {aiError && <div className="text-red-600 text-sm mt-1">{aiError}</div>}
@@ -388,8 +478,8 @@ export function FoundPetForm() {
 
           {/* Advanced Options Toggle */}
           <motion.button type="button" variants={{ initial: { opacity: 0.8 }, hover: { opacity: 1, scale: 1.02 } }} initial="initial" whileHover="hover" className="text-amber-600 font-medium flex items-center gap-1 text-sm hover:underline focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 rounded-md px-2 py-1" onClick={() => setShowAdvancedOptions(!showAdvancedOptions)} aria-expanded={showAdvancedOptions} aria-controls="advanced-options">
+            <Settings className="h-4 w-4" aria-hidden="true" />
             {showAdvancedOptions ? "Hide advanced options" : "Show advanced options"}
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform duration-300 ${showAdvancedOptions ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9"></polyline></svg>
           </motion.button>
           <AnimatePresence>{showAdvancedOptions && (<motion.div id="advanced-options" className="space-y-6 border-t border-gray-200 pt-4" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -427,10 +517,7 @@ export function FoundPetForm() {
               <div className="text-xs text-gray-500">Provide as much detail as possible. You can use your current location or pick on the map below.</div>
               <div className="mt-2">
                 <LocationMap
-                  coordinates={coordinates}
                   onLocationSelect={handleLocationSelect}
-                  height={250}
-                  markerDraggable
                 />
               </div>
             </div>
@@ -453,6 +540,13 @@ export function FoundPetForm() {
             </div>
           </div>
 
+          {/* Reward Claim Section */}
+          <div className="space-y-2">
+            <Label htmlFor="reward-claim" className="text-amber-800 font-medium">Reward Claim (optional, $)</Label>
+            <Input id="reward-claim" type="number" min="0" step="1" value={rewardClaim} onChange={e => setRewardClaim(e.target.value)} placeholder="e.g. 100" className="border-amber-200 focus:ring-amber-500 max-w-xs" />
+            <div className="text-xs text-gray-500">If the owner has offered a reward, you may claim it here.</div>
+          </div>
+
           {/* Error Message */}
           <AnimatePresence>{error && (<motion.div className="bg-red-50 text-red-600 p-3 rounded-md text-sm flex items-start gap-2" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}><Info className="h-5 w-5 flex-shrink-0 mt-0.5" /><div>{error}</div></motion.div>)}</AnimatePresence>
 
@@ -467,7 +561,7 @@ export function FoundPetForm() {
       {/* Sidebar Section */}
       <aside className="hidden md:block">
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6 shadow">
-          <div className="flex items-center gap-2 mb-2"><Info className="h-6 w-6 text-amber-600" /><span className="font-bold text-amber-800">Found Pet Tips</span></div>
+          <div className="flex items-center gap-2 mb-2"><Lightbulb className="h-6 w-6 text-amber-600" aria-hidden="true" /><span className="font-bold text-amber-800">Found Pet Tips</span></div>
           <ul className="list-disc ml-6 text-amber-700 text-sm space-y-1">
             <li>Check the <Link href="/map" className="underline">Lost &amp; Found Map</Link> for recent lost reports.</li>
             <li>Post on the <Link href="/community" className="underline">Community Board</Link> for local help.</li>
@@ -477,12 +571,12 @@ export function FoundPetForm() {
           </ul>
         </div>
         <div className="bg-white border border-amber-100 rounded-xl p-6 shadow">
-          <div className="font-bold text-amber-800 mb-2">What Happens Next?</div>
+          <div className="font-bold text-amber-800 mb-2 flex items-center gap-2"><Send className="h-5 w-5 text-amber-500" aria-hidden="true" />What Happens Next?</div>
           <ul className="list-disc ml-6 text-amber-700 text-sm space-y-1">
-            <li>Your report is shared with our network and volunteers</li>
-            <li>AI will match the pet with lost reports and shelters</li>
-            <li>You&apos;ll get notifications for possible matches</li>
-            <li>Check your dashboard for updates and messages</li>
+            <li className="flex items-center gap-2"><Send className="h-4 w-4 text-amber-400" aria-hidden="true" />Your report is shared with our network and volunteers</li>
+            <li className="flex items-center gap-2"><Bot className="h-4 w-4 text-amber-400" aria-hidden="true" />AI will match the pet with lost reports and shelters</li>
+            <li className="flex items-center gap-2"><Bell className="h-4 w-4 text-amber-400" aria-hidden="true" />You'll get notifications for possible matches</li>
+            <li className="flex items-center gap-2"><LayoutDashboard className="h-4 w-4 text-amber-400" aria-hidden="true" />Check your dashboard for updates and messages</li>
           </ul>
         </div>
       </aside>

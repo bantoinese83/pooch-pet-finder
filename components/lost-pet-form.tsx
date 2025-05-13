@@ -4,7 +4,7 @@ import React from "react"
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Calendar, MapPin, Info, Sparkles } from "lucide-react"
+import { Loader2, Calendar, MapPin, Info, Sparkles, Lightbulb, Send, Bot, Bell, LayoutDashboard, UploadCloud, Dog, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { LocationMap } from "@/components/location-map"
@@ -93,6 +93,7 @@ export function LostPetForm() {
   const aiSetBreeds = React.useRef<string[] | null>(null)
   // Store the initial location value for the map, so it only gets set once (on mount)
   const initialLocationRef = React.useRef<string>("");
+  const [reward, setReward] = useState<string>("")
   React.useEffect(() => {
     if (!initialLocationRef.current && location) {
       initialLocationRef.current = location;
@@ -256,6 +257,11 @@ export function LostPetForm() {
 
       formData.append("description", description)
 
+      // Add reward if provided
+      if (reward) {
+        formData.append("reward", reward)
+      }
+
       // Get the user's access token
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
@@ -400,8 +406,16 @@ export function LostPetForm() {
             petColors={petColors}
           />
 
+          {/* Reward Section */}
+          <div className="space-y-2">
+            <Label htmlFor="reward" className="text-amber-800 font-medium">Reward Offered (optional, $)</Label>
+            <Input id="reward" type="number" min="0" step="1" value={reward} onChange={e => setReward(e.target.value)} placeholder="e.g. 100" className="border-amber-200 focus:ring-amber-500 max-w-xs" />
+            <div className="text-xs text-gray-500">If you wish, offer a reward for your pet's safe return.</div>
+          </div>
+
           {/* Advanced Options Toggle */}
           <motion.button type="button" variants={{ initial: { opacity: 0.8 }, hover: { opacity: 1, scale: 1.02 } }} initial="initial" whileHover="hover" className="text-amber-600 font-medium flex items-center gap-1 text-sm hover:underline focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 rounded-md px-2 py-1" onClick={() => setShowAdvancedOptions(!showAdvancedOptions)} aria-expanded={showAdvancedOptions} aria-controls="advanced-options">
+            <Settings className="h-4 w-4" aria-hidden="true" />
             {showAdvancedOptions ? "Hide advanced options" : "Show advanced options"}
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform duration-300 ${showAdvancedOptions ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9"></polyline></svg>
           </motion.button>
@@ -459,7 +473,7 @@ export function LostPetForm() {
       {/* Sidebar Section */}
       <aside className="hidden md:block">
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6 shadow">
-          <div className="flex items-center gap-2 mb-2"><Info className="h-6 w-6 text-amber-600" /><span className="font-bold text-amber-800">Lost Pet Search Tips</span></div>
+          <div className="flex items-center gap-2 mb-2"><Lightbulb className="h-6 w-6 text-amber-600" aria-hidden="true" /><span className="font-bold text-amber-800">Lost Pet Search Tips</span></div>
           <ul className="list-disc ml-6 text-amber-700 text-sm space-y-1">
             <li>Check the <Link href="/map" className="underline">Lost &amp; Found Map</Link> for recent sightings.</li>
             <li>Share your report on the <Link href="/community" className="underline">Community Board</Link>.</li>
@@ -469,12 +483,12 @@ export function LostPetForm() {
           </ul>
         </div>
         <div className="bg-white border border-amber-100 rounded-xl p-6 shadow">
-          <div className="font-bold text-amber-800 mb-2">What Happens Next?</div>
+          <div className="font-bold text-amber-800 mb-2 flex items-center gap-2"><Send className="h-5 w-5 text-amber-500" aria-hidden="true" />What Happens Next?</div>
           <ul className="list-disc ml-6 text-amber-700 text-sm space-y-1">
-            <li>Your report is shared with our network and volunteers</li>
-            <li>AI will match your pet with found reports and shelters</li>
-            <li>You'll get notifications for possible matches</li>
-            <li>Check your dashboard for updates and messages</li>
+            <li className="flex items-center gap-2"><Send className="h-4 w-4 text-amber-400" aria-hidden="true" />Your report is shared with our network and volunteers</li>
+            <li className="flex items-center gap-2"><Bot className="h-4 w-4 text-amber-400" aria-hidden="true" />AI will match your pet with found reports and shelters</li>
+            <li className="flex items-center gap-2"><Bell className="h-4 w-4 text-amber-400" aria-hidden="true" />You'll get notifications for possible matches</li>
+            <li className="flex items-center gap-2"><LayoutDashboard className="h-4 w-4 text-amber-400" aria-hidden="true" />Check your dashboard for updates and messages</li>
           </ul>
         </div>
       </aside>

@@ -24,6 +24,7 @@ export async function POST(request: Request) {
     const finderName = formData.get("finderName") as string
     const finderPhone = formData.get("finderPhone") as string
     const finderEmail = formData.get("finderEmail") as string
+    const rewardClaim = formData.get("rewardClaim") ? Number(formData.get("rewardClaim")) : null
 
     if (!image) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 })
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
       finder_name: finderName,
       finder_phone: finderPhone,
       finder_email: finderEmail,
+      reward_claim: rewardClaim,
       status: "active",
       created_at: new Date().toISOString(),
     })

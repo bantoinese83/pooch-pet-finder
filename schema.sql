@@ -22,6 +22,8 @@ CREATE TABLE pet_reports (
   finder_name TEXT,
   finder_phone TEXT,
   finder_email TEXT,
+  reward_claim numeric,
+  reward_paid boolean DEFAULT false,
   -- Common fields
   status TEXT DEFAULT 'active',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

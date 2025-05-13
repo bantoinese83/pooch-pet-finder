@@ -12,7 +12,14 @@ export async function generatePetDescriptionFromImage(base64Image: string) {
           data: base64Image,
         },
       },
-      { text: "Describe this pet for a lost/found pet report. Include breed, color, markings, and any unique features. Suggest 2-4 tags as a comma-separated list." },
+      { text: `Describe this pet for a lost/found pet report. Use this strict format:
+Description: <one-sentence description>
+Breed: <breed name>
+Color: <comma-separated colors>
+Markings: <comma-separated markings>
+Unique Features: <comma-separated features>
+Tags: <comma-separated tags>
+Do not use markdown or extra formatting. Only output these fields, each on its own line.` },
     ],
   })
   return result.text

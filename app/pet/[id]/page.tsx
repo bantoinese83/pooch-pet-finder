@@ -13,6 +13,20 @@ export default async function PetDetailsPage({ params }: { params: { id: string 
           <Image src={pet.image_url} alt={pet.pet_name || "Pet"} width={320} height={320} className="rounded-lg mb-4 object-cover w-full max-w-xs h-64 bg-gray-100" />
         )}
         <h1 className="text-3xl font-bold text-amber-800 mb-2">{pet.pet_name || "Unnamed Pet"}</h1>
+        {pet.report_type === 'found' && pet.reward_claim && pet.reward_claim > 0 && (
+          <div className="mb-2 flex items-center justify-center">
+            <span className="inline-block bg-green-100 text-green-900 font-semibold px-4 py-1 rounded-full shadow animate-pulse text-lg">
+              Reward Claimed: ${pet.reward_claim}
+            </span>
+          </div>
+        )}
+        {pet.reward && pet.reward > 0 && (
+          <div className="mb-2 flex items-center justify-center">
+            <span className="inline-block bg-yellow-200 text-yellow-900 font-semibold px-4 py-1 rounded-full shadow animate-pulse text-lg">
+              Reward Offered: ${pet.reward}
+            </span>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2 text-sm text-gray-700 mb-2">
           <span className="bg-amber-100 px-2 py-1 rounded">{pet.report_type?.toUpperCase()}</span>
           <span className="bg-gray-100 px-2 py-1 rounded">{pet.status}</span>

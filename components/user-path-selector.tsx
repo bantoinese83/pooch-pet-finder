@@ -105,9 +105,6 @@ export function UserPathSelector() {
             transition={{ duration: 0.5 }}
           >
             <div className="mb-6 flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-amber-800">
-                {selectedPath === "lost" ? "Report Your Lost Pet" : "Report a Found Pet"}
-              </h2>
               <Button
                 variant="outline"
                 className="text-amber-600 border-amber-300"

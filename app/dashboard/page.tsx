@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabaseClient"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Trophy, PawPrint, Users, Bell, AlertTriangle, Heart, Sparkles } from "lucide-react"
+import { Trophy, PawPrint, Users, Bell, AlertTriangle, Heart, Sparkles, Pencil, Trash2, CheckCircle, Inbox, Ghost, Info, ListChecks, Lock } from "lucide-react"
 import Link from "next/link"
 import { AvatarHeader } from "@/components/ui/avatar-header"
 import { StatsCard } from "@/components/ui/stats-card"
@@ -25,6 +25,8 @@ interface PetReport {
   location: string
   image_url: string
   pet_name?: string
+  report_type?: string
+  reward_claim?: number
 }
 
 interface UserData {
@@ -83,6 +85,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("active")
   const confettiRef = useRef<{ fire: () => void } | null>(null)
+  const [confirmedRewards, setConfirmedRewards] = useState<{ [petId: string]: boolean }>({})
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }: { data: { user: unknown } }) => {
@@ -177,10 +180,11 @@ export default function DashboardPage() {
   recentActivity.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   const topRecent = recentActivity.slice(0, 8)
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-amber-700">Loading dashboard...</div>
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-amber-700"><Inbox className="h-6 w-6 mr-2" aria-hidden="true" />Loading dashboard...</div>
   if (!user) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-amber-100 via-amber-50 to-white">
       <div className="bg-white rounded-xl shadow-xl p-8 max-w-md w-full text-center">
+        <Lock className="h-8 w-8 text-amber-700 mx-auto mb-3" aria-hidden="true" />
         <h1 className="text-3xl font-bold text-amber-800 mb-4">Sign In Required</h1>
         <p className="text-gray-600 mb-6">Please <Link href="/login" className="text-amber-700 underline">sign in</Link> to access your dashboard.</p>
       </div>
@@ -223,8 +227,8 @@ export default function DashboardPage() {
       {/* Tabs for reports */}
       <Tabs defaultValue="active" value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="active">Active Reports</TabsTrigger>
-          <TabsTrigger value="claimed">Claimed Pets</TabsTrigger>
+          <TabsTrigger value="active"><ListChecks className="h-4 w-4 mr-1" aria-hidden="true" />Active Reports</TabsTrigger>
+          <TabsTrigger value="claimed"><Trophy className="h-4 w-4 mr-1" aria-hidden="true" />Claimed Pets</TabsTrigger>
         </TabsList>
         <TabsContent value="active">
           {/* List active (not claimed) pet reports */}
@@ -241,24 +245,47 @@ export default function DashboardPage() {
                 <div className="font-bold text-lg flex items-center gap-2">
                   <PawPrint className="h-5 w-5 text-amber-600" />
                   {pet.pet_name || "Unnamed Pet"}
+                  {pet.report_type === 'found' && pet.reward_claim && pet.reward_claim > 0 && (
+                    <span className="ml-2 inline-block bg-green-100 text-green-900 text-xs font-semibold px-2 py-0.5 rounded-full">Reward Claimed: ${pet.reward_claim}</span>
+                  )}
                 </div>
                 <div className="text-sm text-gray-600">{pet.description}</div>
+                {pet.report_type === 'found' && pet.reward_claim && pet.reward_claim > 0 && !confirmedRewards[pet.id] && (
+                  <button
+                    className="mt-2 px-3 py-1 border rounded text-green-700 border-green-300 hover:bg-green-50 flex items-center gap-1"
+                    onClick={async () => {
+                      const res = await fetch("/api/pet-reports", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ petId: pet.id, reward_paid: true })
+                      })
+                      if (res.ok) setConfirmedRewards(prev => ({ ...prev, [pet.id]: true }))
+                    }}
+                    aria-label="Confirm Reward Paid"
+                  >
+                    <CheckCircle className="h-4 w-4" aria-hidden="true" /> Confirm Reward Paid
+                  </button>
+                )}
+                {pet.report_type === 'found' && pet.reward_claim && pet.reward_claim > 0 && confirmedRewards[pet.id] && (
+                  <span className="mt-2 inline-block bg-green-200 text-green-900 text-xs font-semibold px-2 py-0.5 rounded-full">Reward Payment Confirmed</span>
+                )}
                 <div className="flex gap-2 mt-2">
                   <button
-                    className="px-3 py-1 border rounded text-amber-700 border-amber-300 hover:bg-amber-50"
+                    className="px-3 py-1 border rounded text-amber-700 border-amber-300 hover:bg-amber-50 flex items-center gap-1"
                     onClick={() => {
                       if (window.confirm("Are you sure you want to mark this pet as claimed? This action cannot be undone.")) {
                         markAsClaimed(pet.id)
                       }
                     }}
+                    aria-label="Mark as Claimed"
                   >
-                    Mark as Claimed
+                    <CheckCircle className="h-4 w-4" aria-hidden="true" /> Mark as Claimed
                   </button>
-                  <Button size="sm" variant="outline" onClick={() => router.push(`/edit-report/${pet.id}`)}>Edit</Button>
+                  <Button size="sm" variant="outline" onClick={() => router.push(`/edit-report/${pet.id}`)} aria-label="Edit Report"><Pencil className="h-4 w-4 mr-1" aria-hidden="true" />Edit</Button>
                   <Button size="sm" variant="destructive" onClick={async () => {
                     await supabase.from("pet_reports").delete().eq("id", pet.id)
                     setUserReports(userReports.filter((p: PetReport) => p.id !== pet.id))
-                  }}>Delete</Button>
+                  }} aria-label="Delete Report"><Trash2 className="h-4 w-4 mr-1" aria-hidden="true" />Delete</Button>
                 </div>
               </motion.div>
             ))}
@@ -268,7 +295,8 @@ export default function DashboardPage() {
           {/* List claimed pet reports */}
           <AnimatePresence>
             {userReports.filter((pet: PetReport) => pet.status === "claimed").length === 0 ? (
-              <motion.div className="text-center py-8 text-gray-500" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <motion.div className="text-center py-8 text-gray-500 flex flex-col items-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <Ghost className="h-8 w-8 mb-2 text-amber-200" aria-hidden="true" />
                 No claimed pets yet.
               </motion.div>
             ) : (
@@ -288,6 +316,28 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-yellow-800">{pet.pet_name || "Unnamed Pet"}</span>
                       <span className="inline-block bg-yellow-300 text-yellow-900 text-xs font-semibold px-2 py-0.5 rounded-full ml-2">Claimed!</span>
+                      {pet.report_type === 'found' && pet.reward_claim && pet.reward_claim > 0 && (
+                        <span className="ml-2 inline-block bg-green-100 text-green-900 text-xs font-semibold px-2 py-0.5 rounded-full">Reward Claimed: ${pet.reward_claim}</span>
+                      )}
+                      {pet.report_type === 'found' && pet.reward_claim && pet.reward_claim > 0 && !confirmedRewards[pet.id] && (
+                        <button
+                          className="ml-2 px-3 py-1 border rounded text-green-700 border-green-300 hover:bg-green-50 flex items-center gap-1"
+                          onClick={async () => {
+                            const res = await fetch("/api/pet-reports", {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ petId: pet.id, reward_paid: true })
+                            })
+                            if (res.ok) setConfirmedRewards(prev => ({ ...prev, [pet.id]: true }))
+                          }}
+                          aria-label="Confirm Reward Paid"
+                        >
+                          <CheckCircle className="h-4 w-4" aria-hidden="true" /> Confirm Reward Paid
+                        </button>
+                      )}
+                      {pet.report_type === 'found' && pet.reward_claim && pet.reward_claim > 0 && confirmedRewards[pet.id] && (
+                        <span className="ml-2 inline-block bg-green-200 text-green-900 text-xs font-semibold px-2 py-0.5 rounded-full">Reward Payment Confirmed</span>
+                      )}
                     </div>
                     <div className="text-sm text-gray-700">{pet.description}</div>
                   </div>
@@ -304,7 +354,7 @@ export default function DashboardPage() {
             <Bell className="h-5 w-5 text-amber-500" />
             <h2 className="text-lg font-semibold text-amber-700">Notifications</h2>
           </div>
-          {notifications.length === 0 ? <div className="text-gray-500">No notifications.</div> : (
+          {notifications.length === 0 ? <div className="text-gray-500 flex items-center gap-2"><Info className="h-4 w-4 text-amber-300" aria-hidden="true" />No notifications.</div> : (
             <ul className="space-y-3">
               {notifications.map((n: Notification) => (
                 <li key={n.id} className={`rounded-lg p-3 shadow ${n.read ? 'bg-gray-100' : 'bg-amber-100'}`}>{n.message}</li>
@@ -317,7 +367,7 @@ export default function DashboardPage() {
             <AlertTriangle className="h-5 w-5 text-red-500" />
             <h2 className="text-lg font-semibold text-red-700">Emergency Requests</h2>
           </div>
-          {emergencies.length === 0 ? <div className="text-gray-500">No emergency requests.</div> : (
+          {emergencies.length === 0 ? <div className="text-gray-500 flex items-center gap-2"><Info className="h-4 w-4 text-red-200" aria-hidden="true" />No emergency requests.</div> : (
             <ul className="space-y-3">
               {emergencies.map((e: Emergency) => (
                 <li key={e.id} className="bg-red-50 rounded-lg p-4 flex flex-col gap-2 shadow">
@@ -340,7 +390,7 @@ export default function DashboardPage() {
             <Heart className="h-5 w-5 text-green-500" />
             <h2 className="text-lg font-semibold text-green-700">Volunteer Requests</h2>
           </div>
-          {volunteers.length === 0 ? <div className="text-gray-500">No volunteer requests.</div> : (
+          {volunteers.length === 0 ? <div className="text-gray-500 flex items-center gap-2"><Info className="h-4 w-4 text-green-200" aria-hidden="true" />No volunteer requests.</div> : (
             <ul className="space-y-3">
               {volunteers.map((v: Volunteer) => (
                 <li key={v.id} className="bg-green-50 rounded-lg p-4 flex flex-col gap-2 shadow">
@@ -366,7 +416,7 @@ export default function DashboardPage() {
           <h2 className="text-lg font-semibold text-amber-700">Recent Activity</h2>
         </div>
         {topRecent.length === 0 ? (
-          <div className="text-gray-500">No recent activity yet.</div>
+          <div className="text-gray-500 flex items-center gap-2"><Inbox className="h-5 w-5 text-amber-200" aria-hidden="true" />No recent activity yet.</div>
         ) : (
           <ul className="divide-y divide-amber-100">
             {topRecent.map((a, i) => (
