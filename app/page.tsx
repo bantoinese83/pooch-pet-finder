@@ -1,14 +1,20 @@
-import { Suspense } from "react"
+"use client"
+import { Suspense, useEffect } from "react"
 import { UserPathSelector } from "@/components/user-path-selector"
 import { Hero } from "@/components/hero"
 import { HowItWorksContent } from "@/components/how-it-works-content"
 import HomeClient from "@/components/home-client"
-
-export const metadata = {
-  title: "POOCH Pet Finder | Reunite Lost Pets with Their Owners",
-  description: "POOCH uses advanced AI technology to help reunite lost pets with their owners. Upload a photo of your lost pet or a pet you've found to start the matching process.",
-}
+import { supabase } from "@/lib/supabase-client"
 
 export default function Home() {
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        console.log("Supabase Auth user ID:", data.user.id)
+      } else {
+        console.log("No Supabase user signed in.")
+      }
+    })
+  }, [])
   return <HomeClient />
 }

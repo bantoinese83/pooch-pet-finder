@@ -217,16 +217,24 @@ export function LostPetForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
+    setIsLoading(true)
 
-    if (!file) {
-      setError("Please upload an image of your pet")
+    // Get the latest session
+    const { data: { session } } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
+    if (!accessToken) {
+      setError("You must be signed in to report a lost pet.")
+      setIsLoading(false)
       return
     }
 
-    setIsLoading(true)
-    setError(null)
-
     try {
+      if (!file) {
+        setError("Please upload an image of your pet")
+        return
+      }
+
       // Create form data
       const formData = new FormData()
       formData.append("image", file)
@@ -262,15 +270,11 @@ export function LostPetForm() {
         formData.append("reward", reward)
       }
 
-      // Get the user's access token
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
       // Upload to API with Authorization header
       const response = await fetch("/api/lost-pet", {
         method: "POST",
         body: formData,
-        headers: accessToken ? { "Authorization": `Bearer ${accessToken}` } : {},
+        headers: { "Authorization": `Bearer ${accessToken}` },
       })
 
       if (!response.ok) {

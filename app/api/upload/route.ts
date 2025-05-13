@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     const { data: publicUrlData } = supabase.storage.from("pet-images").getPublicUrl(filePath)
     const imageUrl = publicUrlData?.publicUrl
 
-    const { error } = await supabase.from("pet_searches").insert({
+    const { error } = await supabase.from("pet_reports").insert({
       id: searchId,
       image_url: imageUrl,
       s3_key: filePath,
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       console.error("Error storing search in Supabase:", error)
       return NextResponse.json({ error: "Failed to store search" }, { status: 500 })
     }
-    await supabase.from("pet_searches").update({ status: "completed" }).eq("id", searchId)
+    await supabase.from("pet_reports").update({ status: "completed" }).eq("id", searchId)
     return NextResponse.json({ searchId })
   } catch (error) {
     console.error("Error processing upload:", error)

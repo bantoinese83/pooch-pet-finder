@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     const imageUrl = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.amazonaws.com/${s3Key}`
 
     // Store the search in Supabase
-    const { error } = await supabase.from("pet_searches").insert({
+    const { error } = await supabase.from("pet_reports").insert({
       id: searchId,
       image_url: imageUrl,
       s3_key: s3Key,
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     }
 
     // Update the status to "completed" after processing
-    await supabase.from("pet_searches").update({ status: "completed" }).eq("id", searchId)
+    await supabase.from("pet_reports").update({ status: "completed" }).eq("id", searchId)
 
     return NextResponse.json({ searchId })
   } catch (error) {

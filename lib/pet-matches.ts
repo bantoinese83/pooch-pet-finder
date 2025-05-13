@@ -37,13 +37,17 @@ export async function getPetMatches(searchId: string): Promise<{ originalPet: Pe
   try {
     // 1. Fetch the original pet details from the database using searchId
     const { data: searchData, error: searchError } = await supabase
-      .from("pet_searches")
+      .from("pet_reports")
       .select("*")
       .eq("id", searchId)
-      .single()
+      .maybeSingle()
 
-    if (searchError || !searchData) {
+    if (searchError) {
       throw new Error(`Search not found: ${searchError?.message || "Unknown error"}`)
+    }
+    if (!searchData) {
+      // Not found: return null and empty matches
+      return { originalPet: null, matches: [] }
     }
 
     // 2. Convert the search data to a Pet object

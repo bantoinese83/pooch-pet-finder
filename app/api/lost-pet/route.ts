@@ -4,15 +4,19 @@ import { v4 as uuidv4 } from "uuid"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-const supabase = createClient(supabaseUrl, supabaseKey)
 
-function arraysIntersect(a, b) {
-  return a.some(item => b.includes(item))
+function arraysIntersect(a: any[], b: any[]): boolean {
+  return a.some((item: any) => b.includes(item))
 }
 
-function haversineDistance(coord1, coord2) {
+interface Coordinates {
+  lat: number
+  lng: number
+}
+
+function haversineDistance(coord1: Coordinates, coord2: Coordinates): number | null {
   if (!coord1 || !coord2) return null;
-  const toRad = (x) => (x * Math.PI) / 180;
+  const toRad = (x: number) => (x * Math.PI) / 180;
   const R = 6371; // km
   const dLat = toRad(coord2.lat - coord1.lat);
   const dLon = toRad(coord2.lng - coord1.lng);
@@ -28,10 +32,19 @@ export async function POST(request: Request) {
     // Get the user's access token from the Authorization header
     const authHeader = request.headers.get("authorization")
     let userId = null
+    let accessToken = null
+    let supabase = null
     if (authHeader && authHeader.startsWith("Bearer ")) {
-      const accessToken = authHeader.replace("Bearer ", "")
+      accessToken = authHeader.replace("Bearer ", "")
+      // Create Supabase client with user's access token
+      supabase = createClient(supabaseUrl, supabaseKey, {
+        global: { headers: { Authorization: `Bearer ${accessToken}` } }
+      })
       const { data: { user } } = await supabase.auth.getUser(accessToken)
       userId = user?.id || null
+    } else {
+      // No access token, create default client for error handling
+      supabase = createClient(supabaseUrl, supabaseKey)
     }
     if (!userId) {
       return NextResponse.json({ error: "You must be signed in to report a lost pet." }, { status: 401 })
@@ -72,6 +85,31 @@ export async function POST(request: Request) {
     const { data: publicUrlData } = supabase.storage.from("pet-images").getPublicUrl(filePath)
     const imageUrl = publicUrlData?.publicUrl
 
+    // Debug logging
+    console.log("DEBUG: userId:", userId)
+    console.log("DEBUG: insert payload:", {
+      id: searchId,
+      report_type: "lost",
+      image_url: imageUrl,
+      s3_key: filePath,
+      pet_name: petName,
+      pet_type: petType,
+      breeds,
+      colors,
+      size,
+      age,
+      gender,
+      location,
+      coordinates,
+      description,
+      distinctive_features: distinctiveFeatures,
+      last_seen_date: lastSeenDate,
+      reward,
+      status: "active",
+      created_at: new Date().toISOString(),
+      user_id: userId,
+    })
+
     const { error: insertError } = await supabase.from("pet_reports").insert({
       id: searchId,
       report_type: "lost",
@@ -108,13 +146,25 @@ export async function POST(request: Request) {
     // Automated matching: find found pets with similar type, color, breed
     const { data: foundPets } = await supabase
       .from("pet_reports")
-      .select("id, user_id, pet_type, breeds, colors, location, status")
+      .select("id, user_id, pet_type, breeds, colors, location, status, coordinates, day_found")
       .eq("report_type", "found")
       .eq("status", "active")
       .eq("pet_type", petType)
 
-    const matches = []
-    for (const pet of foundPets || []) {
+    interface FoundPet {
+      id: string
+      user_id: string
+      pet_type: string
+      breeds: string[]
+      colors: string[]
+      location: string
+      status: string
+      coordinates?: Coordinates
+      day_found?: string
+    }
+
+    const matches: string[] = []
+    for (const pet of (foundPets || []) as FoundPet[]) {
       let score = 0
       // Breed match
       if (arraysIntersect(breeds, pet.breeds || [])) score += 0.3
@@ -134,7 +184,7 @@ export async function POST(request: Request) {
       if (pet.day_found && lastSeenDate) {
         const lostDate = new Date(lastSeenDate)
         const foundDate = new Date(pet.day_found)
-        const diffDays = Math.abs((foundDate - lostDate) / (1000 * 60 * 60 * 24))
+        const diffDays = Math.abs((foundDate.getTime() - lostDate.getTime()) / (1000 * 60 * 60 * 24))
         if (diffDays <= 14) {
           score += 0.2
           dateClose = true
@@ -166,7 +216,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ searchId, matches })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error processing lost pet report:", error)
     return NextResponse.json({ error: "Something went wrong. Please try again later.", details: error?.message || null }, { status: 500 })
   }

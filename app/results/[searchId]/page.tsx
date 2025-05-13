@@ -15,7 +15,7 @@ interface ResultsPageProps {
 // Generate metadata for the page
 export async function generateMetadata({ params }: ResultsPageProps): Promise<Metadata> {
   try {
-    const { searchId } = params
+    const { searchId } = await params
     const { originalPet, matches } = await getPetMatches(searchId)
 
     if (!originalPet) {
@@ -65,7 +65,7 @@ export async function generateMetadata({ params }: ResultsPageProps): Promise<Me
 }
 
 export default async function ResultsPage({ params }: ResultsPageProps) {
-  const { searchId } = params
+  const { searchId } = await params
 
   try {
     // Add a timeout to prevent hanging if the database or AWS calls take too long
@@ -78,8 +78,41 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
       typeof resultsPromise
     >
 
+    // Log the output for debugging
+    console.log("getPetMatches output for searchId", searchId, { originalPet, matches })
+
     if (!originalPet) {
-      notFound()
+      // Show a custom not found message instead of notFound()
+      return (
+        <main className="min-h-screen bg-gradient-to-b from-amber-50 to-white flex items-center justify-center">
+          <div className="bg-white p-8 rounded-xl shadow-md max-w-md w-full text-center">
+            <h1 className="text-2xl font-bold text-amber-800 mb-2">Search Not Found</h1>
+            <p className="text-gray-600 mb-6">
+              Sorry, we couldn't find a pet report for this search ID.<br />
+              Please check the link or try submitting a new search.
+            </p>
+            <p className="text-sm text-gray-500 mb-6">Search ID: {searchId}</p>
+            <a href="/" className="inline-block bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2 px-4 rounded transition-colors">Start a New Search</a>
+          </div>
+        </main>
+      )
+    }
+
+    // If there are no matches, show a friendly message
+    if (matches.length === 0) {
+      return (
+        <main className="min-h-screen bg-gradient-to-b from-amber-50 to-white flex items-center justify-center">
+          <div className="bg-white p-8 rounded-xl shadow-md max-w-md w-full text-center">
+            <h1 className="text-2xl font-bold text-amber-800 mb-2">No Matches Found</h1>
+            <p className="text-gray-600 mb-6">
+              We couldn't find any potential matches for your pet at this time.<br />
+              Please check back later or try updating your search criteria.
+            </p>
+            <p className="text-sm text-gray-500 mb-6">Search ID: {searchId}</p>
+            <a href="/" className="inline-block bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2 px-4 rounded transition-colors">Start a New Search</a>
+          </div>
+        </main>
+      )
     }
 
     // Structured data for SEO
@@ -109,19 +142,21 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
         </main>
       </>
     )
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching results:", error)
 
-    // Return a more user-friendly error page
+    // Show a user-friendly error page for timeouts or other errors
     return (
       <main className="min-h-screen bg-gradient-to-b from-amber-50 to-white flex items-center justify-center">
         <div className="bg-white p-8 rounded-xl shadow-md max-w-md w-full text-center">
           <Loader2 className="h-12 w-12 text-amber-600 animate-spin mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-amber-800 mb-2">Processing Your Search</h1>
           <p className="text-gray-600 mb-6">
-            We're analyzing your pet's photo and searching for matches. This may take a moment.
+            We're analyzing your pet's photo and searching for matches. This may take a moment.<br />
+            {error?.message && <span className="text-red-500">Error: {error.message}</span>}
           </p>
-          <p className="text-sm text-gray-500">Search ID: {searchId}</p>
+          <p className="text-sm text-gray-500 mb-6">Search ID: {searchId}</p>
+          <a href="/" className="inline-block bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2 px-4 rounded transition-colors">Back to Home</a>
         </div>
       </main>
     )
