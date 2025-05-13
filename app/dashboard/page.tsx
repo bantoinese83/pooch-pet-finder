@@ -5,11 +5,10 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabaseClient"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Trophy, PawPrint, Users, Mail, Bell, AlertTriangle, Heart, Sparkles } from "lucide-react"
+import { Trophy, PawPrint, Users, Bell, AlertTriangle, Heart, Sparkles } from "lucide-react"
 import Link from "next/link"
 import { AvatarHeader } from "@/components/ui/avatar-header"
 import { StatsCard } from "@/components/ui/stats-card"
-import { AnimatedCounter } from "@/components/ui/animated-counter"
 import { motion, AnimatePresence } from "framer-motion"
 import { Confetti } from "@/components/magicui/confetti"
 import dayjs from "dayjs"
@@ -25,34 +24,44 @@ interface PetReport {
   description: string
   location: string
   image_url: string
+  pet_name?: string
 }
 
 interface UserData {
   id: string
   email: string
   created_at: string
+  name?: string
+  avatar_url?: string
 }
 
 interface Emergency {
   id: string
   pet_name?: string
   details?: string
+  created_at?: string
 }
+
 interface Volunteer {
   id: string
   name?: string
   message?: string
+  created_at?: string
 }
+
 interface ShelterRequest {
   id: string
   name?: string
   description?: string
 }
+
 interface Notification {
   id: string
   message: string
   read?: boolean
+  created_at?: string
 }
+
 interface MatchHistory {
   id: string
   match_confidence: number
@@ -65,32 +74,27 @@ interface MatchHistory {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
-  const [profile, setProfile] = useState<any>(null)
+  const [user, setUser] = useState<UserData | null>(null)
+  const [profile, setProfile] = useState<UserData | null>(null)
   const [userReports, setUserReports] = useState<PetReport[]>([])
-  const [userData, setUserData] = useState<UserData | null>(null)
-  const [claimedPets, setClaimedPets] = useState<PetReport[]>([])
   const [emergencies, setEmergencies] = useState<Emergency[]>([])
   const [volunteers, setVolunteers] = useState<Volunteer[]>([])
-  const [shelterRequests, setShelterRequests] = useState<ShelterRequest[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
-  const [matchHistory, setMatchHistory] = useState<MatchHistory[]>([])
   const [activeTab, setActiveTab] = useState("active")
-  const [error, setError] = useState<string | null>(null)
-  const confettiRef = useRef(null)
+  const confettiRef = useRef<{ fire: () => void } | null>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }: { data: { user: any } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }: { data: { user: unknown } }) => {
       if (!user) {
         setLoading(false)
         setUser(null)
         return
       }
-      setUser(user)
+      setUser(user as UserData)
       // Fetch profile info
-      const { data: profile } = await supabase.from("users").select("*").eq("auth_id", user.id).single()
-      setProfile(profile)
+      const { data: profile } = await supabase.from("users").select("*").eq("auth_id", (user as UserData).id).single()
+      setProfile(profile as UserData)
       // Fetch pet reports
       const { data: petReports } = await supabase.from("pet_reports").select("*").eq("user_id", profile?.id)
       setUserReports(petReports || [])
@@ -100,16 +104,9 @@ export default function DashboardPage() {
       // Fetch volunteer requests
       const { data: volunteers } = await supabase.from("volunteers").select("*").eq("user_id", profile?.id)
       setVolunteers(volunteers || [])
-      // Fetch shelter requests
-      const { data: shelters } = await supabase.from("shelters").select("*").eq("email", user.email)
-      setShelterRequests(shelters || [])
       // Fetch notifications
       const { data: notifications } = await supabase.from("notifications").select("*").eq("user_id", profile?.id).order("created_at", { ascending: false })
       setNotifications(notifications || [])
-      // Fetch match history (for lost and found pets)
-      const { data: lostMatches } = await supabase.from("pet_match_history").select("*, found_pet:found_pet_id(*), lost_pet:lost_pet_id(*)").in("lost_pet_id", (petReports || []).map((p: PetReport) => p.id))
-      const { data: foundMatches } = await supabase.from("pet_match_history").select("*, found_pet:found_pet_id(*), lost_pet:lost_pet_id(*)").in("found_pet_id", (petReports || []).map((p: PetReport) => p.id))
-      setMatchHistory([...(lostMatches || []), ...(foundMatches || [])])
       setLoading(false)
     })
   }, [])
@@ -126,7 +123,7 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Failed to mark as claimed")
       // Fire confetti!
       confettiRef.current?.fire()
-    } catch (err) {
+    } catch {
       // Revert optimistic update
       setUserReports((prev: PetReport[]) => prev.map((pet: PetReport) => pet.id === petId ? { ...pet, status: "active" } : pet))
     }
@@ -197,8 +194,8 @@ export default function DashboardPage() {
       {/* Dashboard Header Card */}
       <div className="relative bg-gradient-to-br from-amber-50 via-white to-yellow-50 rounded-2xl shadow-lg p-6 mb-10 border border-amber-100">
         <AvatarHeader
-          name={profile?.name || user.email}
-          email={user.email}
+          name={profile?.name || user?.email}
+          email={user?.email}
           avatarUrl={profile?.avatar_url}
         >
           <div className="flex gap-6 mt-4">

@@ -40,11 +40,14 @@ export async function summarizeText(text: string) {
 }
 
 export async function askGeminiFAQ(question: string) {
+  // Prepend app summary for robust context
+  const appSummary = `POOCH Pet Finder is a modern, full-stack web application designed to help reunite lost pets with their families. It connects pet owners, volunteers, and animal shelters, streamlining the process of reporting, searching, and managing lost and found pets. Features include: secure user authentication, lost/found pet reporting with photo upload, emergency and volunteer requests, a shelter dashboard, dynamic dashboard with stats and notifications, and a responsive, mobile-friendly UI. The platform uses advanced image recognition (AWS Rekognition + Google Gemini), location-based matching, and integrates with third-party APIs for email, SMS, and more. Ask me anything about how POOCH Pet Finder works!`;
+  const fullPrompt = `${appSummary}\n\nUser question: ${question}`;
   const result = await ai.models.generateContent({
     model: "gemini-2.0-flash",
-    contents: question,
+    contents: fullPrompt,
     config: {
-      systemInstruction: "You are a helpful assistant for a lost/found pet platform. Answer user questions using the FAQ and blog content.",
+      systemInstruction: "You are a helpful assistant for a lost/found pet platform. Answer user questions using the FAQ, blog content, and the app summary provided.",
       temperature: 0.2,
     },
   })

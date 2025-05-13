@@ -78,7 +78,7 @@ export function PetMatchMap({ matches, originalPet, onMarkerClick }: PetMatchMap
           const markerLib = (await loader.importLibrary("marker")) as google.maps.MarkerLibrary
           AdvancedMarkerElement = markerLib.AdvancedMarkerElement
           setUseAdvancedMarkers(!!process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID)
-        } catch (e) {
+        } catch {
           console.warn("Advanced markers not available, falling back to standard markers")
           setUseAdvancedMarkers(false)
         }
@@ -350,7 +350,8 @@ export function PetMatchMap({ matches, originalPet, onMarkerClick }: PetMatchMap
       isMounted = false
 
       // Clean up event listeners
-      mapListenersRef.current.forEach((listener) => {
+      const listeners = mapListenersRef.current
+      listeners.forEach((listener) => {
         if (google && google.maps) {
           google.maps.event.removeListener(listener)
         }
@@ -359,7 +360,7 @@ export function PetMatchMap({ matches, originalPet, onMarkerClick }: PetMatchMap
       // Clear markers
       Object.values(markersRef.current).forEach((marker) => {
         if (marker) {
-          // @ts-ignore - handle both marker types
+          // @ts-expect-error: marker may be either google.maps.Marker or AdvancedMarkerElement, both have .map
           marker.map = null
         }
       })
@@ -374,7 +375,7 @@ export function PetMatchMap({ matches, originalPet, onMarkerClick }: PetMatchMap
       googleMapRef.current = null
       infoWindowRef.current = null
     }
-  }, [matches, originalPet, onMarkerClick, mapZoom])
+  }, [matches, originalPet, onMarkerClick, mapZoom, useAdvancedMarkers])
 
   // Highlight marker when selected
   const highlightMarker = (matchId: string) => {
@@ -409,15 +410,15 @@ export function PetMatchMap({ matches, originalPet, onMarkerClick }: PetMatchMap
   // Expose the highlightMarker function
   useEffect(() => {
     if (window && googleMapsLoaded) {
-      ;(window as any).highlightMarker = highlightMarker
+      ;(window as unknown as { highlightMarker?: typeof highlightMarker }).highlightMarker = highlightMarker
     }
 
     return () => {
       if (window) {
-        delete (window as any).highlightMarker
+        delete (window as unknown as { highlightMarker?: typeof highlightMarker }).highlightMarker
       }
     }
-  }, [googleMapsLoaded])
+  }, [googleMapsLoaded, highlightMarker])
 
   return (
     <div className="w-full h-[500px] md:h-[600px] rounded-lg overflow-hidden border border-amber-200 relative">

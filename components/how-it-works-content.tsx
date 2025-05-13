@@ -6,9 +6,9 @@ import { useState } from "react"
 import { motion } from "framer-motion"
 import { Search, Upload, Sparkles, MapPin, Bell, Clock, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import Link from "next/link"
 import { COLORS } from "@/lib/constants"
+import { FaqList } from "@/components/faq-list"
 
 const container = {
   hidden: { opacity: 0 },
@@ -197,47 +197,7 @@ export function HowItWorksContent() {
         transition={{ delay: 0.7, duration: 0.5 }}
         className="mb-16"
       >
-        <h2 className="text-3xl font-bold mb-6 text-center">Frequently Asked Questions</h2>
-        <Accordion type="single" collapsible className="max-w-3xl mx-auto">
-          <AccordionItem value="item-1">
-            <AccordionTrigger>Is POOCH completely free to use?</AccordionTrigger>
-            <AccordionContent>
-              Yes, POOCH is completely free for individuals looking for their lost pets or who have found a pet. We
-              believe that reuniting pets with their owners should be accessible to everyone.
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="item-2">
-            <AccordionTrigger>How accurate is the pet matching technology?</AccordionTrigger>
-            <AccordionContent>
-              Our AI-powered matching system has a high success rate, but the accuracy depends on the quality of the
-              photos provided and the distinctiveness of the pet's features. We recommend uploading clear, well-lit
-              photos from multiple angles for the best results.
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="item-3">
-            <AccordionTrigger>What should I do after finding a potential match?</AccordionTrigger>
-            <AccordionContent>
-              When you find a potential match, you can contact the other party through our secure messaging system. We
-              recommend asking for specific details about the pet that only the true owner would know, such as unique
-              markings or behaviors, before arranging a meeting in a safe, public location.
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="item-4">
-            <AccordionTrigger>How long does my pet listing stay active?</AccordionTrigger>
-            <AccordionContent>
-              Lost and found pet listings remain active in our system for 90 days by default. You can extend this period
-              or mark the listing as resolved at any time through your account dashboard.
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="item-5">
-            <AccordionTrigger>Does POOCH work with local animal shelters?</AccordionTrigger>
-            <AccordionContent>
-              Yes, POOCH partners with animal shelters across the country to include shelter animals in our search
-              database. This integration significantly increases the chances of finding your pet if they've been taken
-              to a shelter.
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+        <FaqList />
       </motion.div>
 
       <motion.div

@@ -4,25 +4,61 @@ import React from "react"
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Upload, Loader2, Camera, X, Calendar, MapPin, Info, Sparkles, HelpCircle } from "lucide-react"
+import { Loader2, Calendar, MapPin, Info, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { MultiSelect } from "@/components/multi-select"
 import { LocationMap } from "@/components/location-map"
 import { petTypes, petColors, petSizes, petAges, petGenders, petFeatures, getBreedsByPetType } from "@/lib/pet-data"
 import { MAX_UPLOAD_SIZE, SUPPORTED_IMAGE_TYPES } from "@/lib/constants"
 import { motion, AnimatePresence } from "framer-motion"
 import { Input } from "@/components/ui/input"
-import Image from "next/image"
 import { generatePetDescriptionFromImage } from "@/lib/gemini"
-import dynamic from "next/dynamic"
 import { supabase } from "@/lib/supabase-client"
 import Link from "next/link"
+import { PhotoUploadSection } from "@/components/lost-pet-form/PhotoUploadSection"
+import { PetDetailsSection } from "@/components/lost-pet-form/PetDetailsSection"
+import { AdvancedOptionsSection } from "@/components/lost-pet-form/AdvancedOptionsSection"
 
 const isMobile = typeof window !== "undefined" && /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent)
-const Webcam = dynamic(() => import("react-webcam"), { ssr: false })
+// const Webcam = dynamic(() => import("react-webcam"), { ssr: false })
+
+// Helper: map AI tags and description to form fields, robustly inferring petType from breed if needed
+function mapTagsToFormFields(tags: string[], desc: string) {
+  const lowerTags = tags.map(t => t.toLowerCase())
+  // Pet type
+  let petType = petTypes.find(type => lowerTags.includes(type.label.toLowerCase()) || lowerTags.includes(type.value))?.value || ""
+  // Breeds (try to detect even if petType is not set)
+  let breeds: string[] = []
+  let detectedBreedType: string | null = null
+  for (const type of petTypes) {
+    const breedList = getBreedsByPetType(type.value)
+    const foundBreeds = breedList.filter(breed => lowerTags.includes(breed.label.toLowerCase()) || lowerTags.includes(breed.value) || desc.toLowerCase().includes(breed.label.toLowerCase()))
+    if (foundBreeds.length) {
+      breeds = foundBreeds.map(b => b.value)
+      detectedBreedType = type.value
+      break
+    }
+  }
+  // If breed detected but petType not set, infer petType from breed
+  if (!petType && detectedBreedType) {
+    petType = detectedBreedType
+  }
+  // Colors
+  const colors = petColors.filter(color => lowerTags.includes(color.label.toLowerCase()) || lowerTags.includes(color.value) || desc.toLowerCase().includes(color.label.toLowerCase())).map(c => c.value)
+  // Name: try to extract from desc (e.g., "This is <name>.")
+  let petName = ""
+  const nameMatch = desc.match(/(?:named|name is|this is|meet) ([A-Z][a-zA-Z]+)/i)
+  if (nameMatch) petName = nameMatch[1]
+  // Size
+  const size = petSizes.find(s => lowerTags.includes(s.label.toLowerCase()) || desc.toLowerCase().includes(s.label.toLowerCase()))?.value || ""
+  // Age
+  const age = petAges.find(a => lowerTags.includes(a.label.toLowerCase()) || desc.toLowerCase().includes(a.label.toLowerCase()))?.value || ""
+  // Gender
+  const gender = petGenders.find(g => lowerTags.includes(g.label.toLowerCase()) || desc.toLowerCase().includes(g.label.toLowerCase()))?.value || ""
+  // Distinctive Features
+  const distinctiveFeatures = petFeatures.filter(f => lowerTags.includes(f.label.toLowerCase()) || desc.toLowerCase().includes(f.label.toLowerCase())).map(f => f.value)
+  return { petType, colors, breeds, petName, size, age, gender, distinctiveFeatures }
+}
 
 export function LostPetForm() {
   const router = useRouter()
@@ -52,16 +88,34 @@ export function LostPetForm() {
   const [showCameraModal, setShowCameraModal] = useState(false)
   const webcamRef = React.useRef(null)
   const [user, setUser] = useState<any>(null)
+  // Add a ref to track if AI is setting petType and breeds
+  const aiSetPetType = React.useRef<string | null>(null)
+  const aiSetBreeds = React.useRef<string[] | null>(null)
+  // Store the initial location value for the map, so it only gets set once (on mount)
+  const initialLocationRef = React.useRef<string>("");
+  React.useEffect(() => {
+    if (!initialLocationRef.current && location) {
+      initialLocationRef.current = location;
+    }
+    // Do not update after mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Update available breeds when pet type changes
+  // Update available breeds and set breeds if AI has set them
   useEffect(() => {
     if (petType) {
-      const breeds = getBreedsByPetType(petType)
-      setAvailableBreeds(breeds)
-      // Clear selected breeds when pet type changes
-      setBreeds([])
+      const breedsList = getBreedsByPetType(petType)
+      setAvailableBreeds(breedsList)
+      // If AI set breeds, set them after availableBreeds updates
+      if (aiSetBreeds.current) {
+        setBreeds(aiSetBreeds.current)
+        aiSetBreeds.current = null
+      } else {
+        setBreeds([])
+      }
     } else {
       setAvailableBreeds([])
+      setBreeds([])
     }
   }, [petType])
 
@@ -146,10 +200,19 @@ export function LostPetForm() {
     }
   }, [])
 
-  const handleLocationSelect = useCallback((locationData: { address: string; lat: number; lng: number }) => {
-    setLocation(locationData.address)
-    setCoordinates({ lat: locationData.lat, lng: locationData.lng })
-  }, [])
+  // Memoize the location select handler to prevent unnecessary re-renders
+  const handleLocationSelect = React.useCallback((coords: { lat: number; lng: number; address: string }) => {
+    setCoordinates(coords)
+    setLocation(coords.address)
+  }, [setCoordinates, setLocation])
+
+  // Memoize the map to prevent remounts and repeated API requests
+  const memoizedMap = React.useMemo(() => (
+    <LocationMap
+      onLocationSelect={handleLocationSelect}
+      initialAddress={initialLocationRef.current}
+    />
+  ), [handleLocationSelect, initialLocationRef]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -220,23 +283,6 @@ export function LostPetForm() {
     }
   }
 
-  const handleCapture = useCallback(() => {
-    if (webcamRef.current) {
-      // @ts-expect-error
-      const imageSrc = webcamRef.current.getScreenshot()
-      if (imageSrc) {
-        fetch(imageSrc)
-          .then(res => res.blob())
-          .then(blob => {
-            const file = new File([blob], "photo.jpg", { type: "image/jpeg" })
-            setFile(file)
-            setPreview(imageSrc)
-            setShowCameraModal(false)
-          })
-      }
-    }
-  }, [])
-
   return (
     <div className="max-w-5xl mx-auto py-12 px-4 grid grid-cols-1 md:grid-cols-3 gap-8">
       {/* Main Form Section */}
@@ -262,159 +308,123 @@ export function LostPetForm() {
         )}
         <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-xl shadow-md" aria-label="Lost Pet Report Form">
           {/* Photo Upload Section */}
-          <div className="space-y-2">
-            <Label htmlFor="pet-image" className="text-amber-800 font-medium">
-              Upload Pet Photo <span className="text-red-500">*</span>
-            </Label>
-            <div
-              className={`border-2 border-dashed rounded-lg p-4 text-center transition-all duration-200 ${dragActive ? "border-amber-500 bg-amber-50" : "border-amber-300 hover:bg-amber-50"}`}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-            >
-              <input
-                id="pet-image"
-                type="file"
-                accept="image/jpeg,image/png"
-                onChange={handleFileChange}
-                className="hidden"
-                aria-required="true"
-              />
-              {/* Camera input for direct capture (mobile only) */}
-              {isMobile && (
-                <input
-                  id="camera-capture"
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-              )}
-              <label htmlFor="pet-image" className="cursor-pointer block">
-                <AnimatePresence mode="wait">
-                  {preview ? (
-                    <motion.div className="flex flex-col items-center" key="preview" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.3 }}>
-                      <div className="relative group">
-                        <Image src={preview || "/placeholder.svg"} alt="Pet preview" width={200} height={200} className="rounded-lg mb-2 max-h-[200px] w-auto object-contain" />
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded-lg transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                          <button type="button" onClick={e => { e.preventDefault(); setFile(null); setPreview(null); }} className="bg-white p-2 rounded-full" aria-label="Remove image">
-                            <X className="h-4 w-4 text-red-500" />
-                          </button>
-                        </div>
-                      </div>
-                      <span className="text-sm text-amber-600 flex items-center gap-1"><Upload className="h-4 w-4" /> Change image</span>
-                    </motion.div>
-                  ) : (
-                    <motion.div className="flex flex-col items-center py-4" key="upload" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-                      <Upload className="h-12 w-12 text-amber-400 mb-2" />
-                      <p className="text-amber-800 font-medium">Click to upload or drag and drop</p>
-                      <p className="text-gray-500 text-sm">JPEG or PNG (max 10MB)</p>
-                      <div className="mt-4 flex gap-2 justify-center">
-                        <Button type="button" variant="outline" size="sm" className="text-amber-600 border-amber-300" onClick={e => { e.preventDefault(); document.getElementById("pet-image")?.click(); }}>
-                          <Upload className="h-4 w-4 mr-2" /> Browse Files
-                        </Button>
-                        {isMobile && (
-                          <Button type="button" variant="outline" size="sm" className="text-amber-600 border-amber-300" onClick={e => { e.preventDefault(); cameraInputRef.current?.click(); }}>
-                            <Camera className="h-4 w-4 mr-2" /> Take Photo
-                          </Button>
-                        )}
-                        <Button type="button" variant="outline" size="sm" className="text-amber-600 border-amber-300" onClick={e => { e.preventDefault(); setShowCameraModal(true); }}>
-                          <Camera className="h-4 w-4 mr-2" /> Use Camera
-                        </Button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </label>
-            </div>
-            {/* Camera Modal for custom camera UI */}
-            {showCameraModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
-                <div className="bg-white rounded-lg p-6 shadow-lg max-w-sm w-full flex flex-col items-center">
-                  <Webcam ref={webcamRef} screenshotFormat="image/jpeg" className="rounded-lg mb-4 w-full h-64 object-cover" videoConstraints={{ facingMode: "environment" }} />
-                  <div className="flex gap-2 w-full">
-                    <Button type="button" className="flex-1 bg-amber-600 text-white" onClick={handleCapture}><Camera className="h-4 w-4 mr-1" /> Capture</Button>
-                    <Button type="button" className="flex-1" variant="outline" onClick={() => setShowCameraModal(false)}><X className="h-4 w-4 mr-1" /> Cancel</Button>
-                  </div>
-                </div>
-              </div>
-            )}
-            {file && (
-              <div className="flex items-center gap-2 mt-2">
-                <Button type="button" variant="outline" size="sm" className="text-amber-600 border-amber-300" disabled={aiLoading} onClick={async () => { setAiLoading(true); setAiError(null); try { const reader = new FileReader(); reader.onload = async (e) => { const base64 = (e.target?.result as string)?.split(",")[1]; if (base64) { const aiText = await generatePetDescriptionFromImage(base64); const [desc, tags] = aiText.split("Tags:"); setDescription(desc.trim()); } }; reader.readAsDataURL(file); } catch (err) { setAiError("AI description failed. Please try again."); } finally { setAiLoading(false); } }}>
-                  {aiLoading ? "Generating..." : <><Sparkles className="h-4 w-4 mr-1" /> Let AI describe your pet</>}
-                </Button>
-                <HelpCircle className="h-4 w-4 text-gray-400" title="AI will analyze your photo and suggest a detailed description." />
-              </div>
-            )}
-            {aiError && <div className="text-red-600 text-sm mt-1">{aiError}</div>}
-          </div>
+          <PhotoUploadSection
+            file={file}
+            preview={preview}
+            setFile={setFile}
+            setPreview={setPreview}
+            aiLoading={aiLoading}
+            aiError={aiError}
+            onAIDescribe={async () => {
+              setAiLoading(true)
+              setAiError(null)
+              try {
+                if (!file) return
+                const reader = new FileReader()
+                reader.onload = async (e) => {
+                  const base64 = (e.target?.result as string)?.split(",")[1]
+                  if (base64) {
+                    const aiText = await generatePetDescriptionFromImage(base64)
+                    if (!aiText) return
+                    // Robustly extract description and tags
+                    let desc = aiText
+                    let tagsRaw = ""
+                    const tagMatch = aiText.match(/Tags?:\s*([\s\S]*)/i)
+                    if (tagMatch) {
+                      desc = aiText.slice(0, tagMatch.index).trim()
+                      tagsRaw = tagMatch[1].replace(/\n/g, " ").trim()
+                    }
+                    if (!desc) desc = ""
+                    // Clean up description: remove markdown, headings, boilerplate, and structured lines
+                    desc = desc.replace(/(^|\n)(here'?s a description[^\n]*:|\*\*description:?\*\*|description:|\*\*|\*|^\s*\n)/gi, "")
+                      .replace(/\*\*/g, "")
+                      .replace(/\n+/g, " ")
+                      .replace(/^(Breed|Color|Markings|Unique Features|Features|Distinctive Features):[^\n]*$/gim, "")
+                      .replace(/\s{2,}/g, " ")
+                      .replace(/^\s+|\s+$/g, "")
+                    setDescription(desc.trim())
+                    if (tagsRaw) {
+                      const tags = tagsRaw.split(",").map(t => t.trim())
+                      const { petType: aiPetType, colors: aiColors, breeds: aiBreeds, petName: aiPetName, size: aiSize, age: aiAge, gender: aiGender, distinctiveFeatures: aiFeatures } = mapTagsToFormFields(tags, desc)
+                      if (aiPetType) {
+                        aiSetPetType.current = aiPetType
+                        setPetType(aiPetType)
+                      }
+                      if (aiBreeds.length) {
+                        aiSetBreeds.current = aiBreeds
+                        if (petType === aiSetPetType.current) {
+                          setBreeds(aiBreeds)
+                          aiSetBreeds.current = null
+                        }
+                      }
+                      if (aiColors.length) setColors(aiColors)
+                      if (aiPetName) setPetName(aiPetName)
+                      if (aiSize) setSize(aiSize)
+                      if (aiAge) setAge(aiAge)
+                      if (aiGender) setGender(aiGender)
+                      if (aiFeatures.length) setDistinctiveFeatures(aiFeatures)
+                    }
+                  }
+                }
+                reader.readAsDataURL(file)
+              } catch (err) {
+                setAiError("AI description failed. Please try again.")
+              } finally {
+                setAiLoading(false)
+              }
+            }}
+            showCameraModal={showCameraModal}
+            setShowCameraModal={setShowCameraModal}
+            webcamRef={webcamRef}
+            handleCapture={() => {}}
+            cameraInputRef={cameraInputRef as React.RefObject<HTMLInputElement>}
+            dragActive={dragActive}
+            handleDrag={handleDrag}
+            handleDrop={handleDrop}
+            handleFileChange={handleFileChange}
+            isMobile={isMobile}
+          />
 
           {/* Pet Details Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="pet-name" className="text-amber-800 font-medium">Pet&apos;s Name</Label>
-              <Input id="pet-name" value={petName} onChange={e => setPetName(e.target.value)} placeholder="Enter your pet&apos;s name" className="border-amber-200 focus:ring-amber-500" />
-              <div className="text-xs text-gray-500">Optional, but helps us personalize your search.</div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="pet-type" className="text-amber-800 font-medium">Pet Type <span className="text-red-500">*</span></Label>
-              <Select value={petType} onValueChange={setPetType} required>
-                <SelectTrigger id="pet-type" className="border-amber-200 focus:ring-amber-500"><SelectValue placeholder="Select pet type" /></SelectTrigger>
-                <SelectContent>{petTypes.map(type => (<SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>))}</SelectContent>
-              </Select>
-              <div className="text-xs text-gray-500">Choose the closest match for your pet.</div>
-            </div>
-          </div>
-
-          {/* Dynamic Fields: Breeds, Colors, Features */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {petType && (
-              <div className="space-y-2">
-                <Label htmlFor="breeds" className="text-amber-800 font-medium">Breed(s)</Label>
-                <MultiSelect options={availableBreeds} selected={breeds} onChange={setBreeds} placeholder="Select breed(s)" emptyMessage={petType ? "No breeds found." : "Select a pet type first."} className="border-amber-200 focus-within:ring-amber-500" />
-                <div className="text-xs text-gray-500">Select all that apply. Leave blank if unsure.</div>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="colors" className="text-amber-800 font-medium">Color(s) <span className="text-red-500">*</span></Label>
-              <MultiSelect options={petColors} selected={colors} onChange={setColors} placeholder="Select color(s)" className="border-amber-200 focus-within:ring-amber-500" />
-              <div className="text-xs text-gray-500">Select all that apply.</div>
-            </div>
-          </div>
+          <PetDetailsSection
+            petName={petName}
+            setPetName={setPetName}
+            petType={petType}
+            setPetType={setPetType}
+            breeds={breeds}
+            setBreeds={setBreeds}
+            availableBreeds={availableBreeds}
+            colors={colors}
+            setColors={setColors}
+            petTypes={petTypes}
+            petColors={petColors}
+          />
 
           {/* Advanced Options Toggle */}
           <motion.button type="button" variants={{ initial: { opacity: 0.8 }, hover: { opacity: 1, scale: 1.02 } }} initial="initial" whileHover="hover" className="text-amber-600 font-medium flex items-center gap-1 text-sm hover:underline focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 rounded-md px-2 py-1" onClick={() => setShowAdvancedOptions(!showAdvancedOptions)} aria-expanded={showAdvancedOptions} aria-controls="advanced-options">
             {showAdvancedOptions ? "Hide advanced options" : "Show advanced options"}
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform duration-300 ${showAdvancedOptions ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9"></polyline></svg>
           </motion.button>
-          <AnimatePresence>{showAdvancedOptions && (<motion.div id="advanced-options" className="space-y-6 border-t border-gray-200 pt-4" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="size" className="text-amber-800 font-medium">Size</Label>
-                <Select value={size} onValueChange={setSize}><SelectTrigger id="size" className="border-amber-200 focus:ring-amber-500"><SelectValue placeholder="Select size" /></SelectTrigger><SelectContent>{petSizes.map(size => (<SelectItem key={size.value} value={size.value}>{size.label}</SelectItem>))}</SelectContent></Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="age" className="text-amber-800 font-medium">Age</Label>
-                <Select value={age} onValueChange={setAge}><SelectTrigger id="age" className="border-amber-200 focus:ring-amber-500"><SelectValue placeholder="Select age" /></SelectTrigger><SelectContent>{petAges.map(age => (<SelectItem key={age.value} value={age.value}>{age.label}</SelectItem>))}</SelectContent></Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="gender" className="text-amber-800 font-medium">Gender</Label>
-                <Select value={gender} onValueChange={setGender}><SelectTrigger id="gender" className="border-amber-200 focus:ring-amber-500"><SelectValue placeholder="Select gender" /></SelectTrigger><SelectContent>{petGenders.map(gender => (<SelectItem key={gender.value} value={gender.value}>{gender.label}</SelectItem>))}</SelectContent></Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="distinctive-features" className="text-amber-800 font-medium">Distinctive Features</Label>
-              <MultiSelect options={petFeatures} selected={distinctiveFeatures} onChange={setDistinctiveFeatures} placeholder="Select distinctive features" className="border-amber-200 focus-within:ring-amber-500" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description" className="text-amber-800 font-medium">Additional Details</Label>
-              <Textarea id="description" value={description} onChange={e => setDescription(e.target.value)} placeholder="Any other distinguishing features, behavior, medical conditions, etc." rows={3} className="border-amber-200 focus:ring-amber-500" />
-            </div>
-          </motion.div>)}</AnimatePresence>
+          <AnimatePresence>{showAdvancedOptions && (
+            <motion.div id="advanced-options" className="space-y-6 border-t border-gray-200 pt-4" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }}>
+              <AdvancedOptionsSection
+                size={size}
+                setSize={setSize}
+                age={age}
+                setAge={setAge}
+                gender={gender}
+                setGender={setGender}
+                distinctiveFeatures={distinctiveFeatures}
+                setDistinctiveFeatures={setDistinctiveFeatures}
+                description={description}
+                setDescription={setDescription}
+                petSizes={petSizes}
+                petAges={petAges}
+                petGenders={petGenders}
+                petFeatures={petFeatures}
+              />
+            </motion.div>
+          )}</AnimatePresence>
 
           {/* Last Seen Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -430,12 +440,7 @@ export function LostPetForm() {
               </div>
               <div className="text-xs text-gray-500">Provide as much detail as possible. You can use your current location or pick on the map below.</div>
               <div className="mt-2">
-                <LocationMap
-                  coordinates={coordinates}
-                  onLocationSelect={handleLocationSelect}
-                  height={250}
-                  markerDraggable
-                />
+                {memoizedMap}
               </div>
             </div>
           </div>
