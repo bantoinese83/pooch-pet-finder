@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Loader } from "@googlemaps/js-api-loader"
