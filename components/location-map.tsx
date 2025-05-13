@@ -133,9 +133,10 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
     [onLocationSelect, googleMapsLoaded, updateMarker, updateRadiusCircle],
   )
 
-  // Load Google Maps API
+  // Map initialization: only run on mount or when initialAddress changes
   useEffect(() => {
     let isMounted = true
+    let mapInstance: google.maps.Map | null = null
 
     const initMap = async () => {
       try {
@@ -146,10 +147,8 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
           mapIds: [process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID || ""],
         })
 
-        // Load the Google Maps script first
         await loader.load()
 
-        // Defensive check: Ensure google and DOM refs exist
         if (!window.google || !window.google.maps) {
           setError("Google Maps failed to load. Please check your API key and quota.")
           return
@@ -159,14 +158,10 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
           return
         }
 
-        // Import required libraries
         const { Map } = (await loader.importLibrary("maps")) as google.maps.MapsLibrary
         const { Autocomplete } = (await loader.importLibrary("places")) as google.maps.PlacesLibrary
-
-        // Create Geocoder directly from google.maps namespace
         const geocoder = new window.google.maps.Geocoder()
 
-        // Check if we can use Advanced Markers (requires a valid Map ID)
         let AdvancedMarkerElement
         try {
           const markerLib = (await loader.importLibrary("marker")) as google.maps.MarkerLibrary
@@ -182,22 +177,18 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
         setGoogleMapsLoaded(true)
         geocoderRef.current = geocoder
 
-        // Check again after async for DOM refs
         if (!mapRef.current || !searchInputRef.current) {
           setError("Map container not available. Please reload the page.")
           return
         }
 
-        // Check if geolocation is available
         setShowMyLocationButton(!!navigator.geolocation)
 
         // Use memoized mapOptions
-        const map = new Map(mapRef.current, mapOptions)
-
-        googleMapRef.current = map
+        mapInstance = new Map(mapRef.current, mapOptions)
+        googleMapRef.current = mapInstance
 
         // Defensive: Ensure Autocomplete constructor exists
-        // TODO: Migrate to PlaceAutocompleteElement before March 2025 (see Google Maps migration guide)
         if (typeof Autocomplete !== "function") {
           setError("Google Maps Autocomplete failed to load. Please check your API key and quota.")
           return
@@ -207,42 +198,32 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
         const autocomplete = new Autocomplete(searchInputRef.current, {
           fields: ["address_components", "geometry", "name", "formatted_address"],
         })
-
         autocompleteRef.current = autocomplete
 
         // Add event listener for place selection
         const placeChangedListener = autocomplete.addListener("place_changed", () => {
           const place = autocomplete.getPlace()
-
           if (!place.geometry || !place.geometry.location) {
             setError("No location details available for this place. Please try another.")
             return
           }
-
           const newCoords = {
             lat: place.geometry.location.lat(),
             lng: place.geometry.location.lng(),
           }
-
           setCoordinates(newCoords)
           setAddress(place.formatted_address || "")
-
-          // Update map and marker
           if (googleMapRef.current) {
             googleMapRef.current.setCenter(newCoords)
             googleMapRef.current.setZoom(15)
           }
-
           updateMarker(newCoords)
           updateRadiusCircle(newCoords)
-
-          // Notify parent component
           onLocationSelect({
             address: place.formatted_address || "",
             ...newCoords,
           })
         })
-
         mapListenersRef.current.push(placeChangedListener)
 
         // Defensive: Only create marker if map is available
@@ -251,9 +232,8 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
           return
         }
 
-        // Create a marker based on available features
+        // Create a marker based on available features (initial only)
         if (useAdvancedMarkers && AdvancedMarkerElement) {
-          // Create an advanced marker
           const markerElement = document.createElement("div")
           markerElement.innerHTML = `
             <div style="
@@ -292,24 +272,21 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
               </div>
             </div>
           `
-
           const marker = new AdvancedMarkerElement({
             position: mapOptions.center,
-            map,
+            map: mapInstance,
             content: markerElement,
             title: "Pet Location",
           })
-
           markerRef.current = marker
         } else {
-          // Use standard marker as fallback
           if (!window.google.maps.Marker) {
             setError("Google Maps Marker failed to load. Please check your API key and quota.")
             return
           }
           const marker = new window.google.maps.Marker({
             position: mapOptions.center,
-            map,
+            map: mapInstance,
             icon: {
               path: window.google.maps.SymbolPath.CIRCLE,
               fillColor: "#d97706",
@@ -321,8 +298,6 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
             title: "Pet Location",
             draggable: true,
           })
-
-          // Add drag end listener for standard marker
           marker.addListener("dragend", () => {
             const position = marker.getPosition()
             if (position) {
@@ -332,11 +307,10 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
               geocodePosition(newCoords)
             }
           })
-
           markerRef.current = marker
         }
 
-        // Create radius circle
+        // Create radius circle (initial only)
         if (!window.google.maps.Circle) {
           setError("Google Maps Circle failed to load. Please check your API key and quota.")
           return
@@ -347,16 +321,15 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
           strokeWeight: 2,
           fillColor: "#d97706",
           fillOpacity: 0.1,
-          map,
+          map: mapInstance,
           center: mapOptions.center,
           radius: searchRadius,
           visible: false,
         })
-
         setRadiusCircle(circle)
 
         // Add event listener for map click
-        const clickListener = map.addListener("click", (event: google.maps.MapMouseEvent) => {
+        const clickListener = mapInstance.addListener("click", (event: google.maps.MapMouseEvent) => {
           if (event.latLng) {
             const newCoords = { lat: event.latLng.lat(), lng: event.latLng.lng() }
             setCoordinates(newCoords)
@@ -365,14 +338,11 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
             geocodePosition(newCoords)
           }
         })
-
         mapListenersRef.current.push(clickListener)
 
-        // If we have an initial address, geocode it
         if (initialAddress) {
           geocodeAddress(initialAddress)
         }
-
         setIsLoading(false)
       } catch (err: any) {
         console.error("Error loading Google Maps:", err)
@@ -382,9 +352,7 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
         }
       }
     }
-
     initMap()
-
     return () => {
       isMounted = false
       // Clean up event listeners
@@ -412,7 +380,17 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
       googleMapRef.current = null
       autocompleteRef.current = null
     }
-  }, [initialAddress, onLocationSelect, searchRadius, useAdvancedMarkers, mapOptions, geocodeAddress])
+  }, [initialAddress]) // Only run on mount or initialAddress change
+
+  // Update radius circle when searchRadius changes
+  useEffect(() => {
+    if (radiusCircle) {
+      radiusCircle.setRadius(searchRadius)
+    }
+  }, [searchRadius, radiusCircle])
+
+  // Update marker/circle when useAdvancedMarkers changes (optional, if needed)
+  // ...
 
   // Geocode coordinates to address
   const geocodePosition = useCallback(
