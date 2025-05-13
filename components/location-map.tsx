@@ -39,6 +39,100 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
   const [searchRadius, setSearchRadius] = useState(1000) // 1km default radius
   const [useAdvancedMarkers, setUseAdvancedMarkers] = useState(false)
 
+  // Memoize map options to avoid recreating on every render
+  const mapOptions = React.useMemo(() => {
+    const defaultLocation = { lat: 40.7128, lng: -74.006 }
+    const options: google.maps.MapOptions = {
+      center: defaultLocation,
+      zoom: 12,
+      mapTypeControl: true,
+      streetViewControl: true,
+      fullscreenControl: true,
+    }
+    if (process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID) {
+      options.mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID
+      // Do NOT set styles if mapId is present
+    } else {
+      options.styles = [
+        {
+          featureType: "poi.business",
+          stylers: [{ visibility: "off" }],
+        },
+        {
+          featureType: "transit",
+          elementType: "labels.icon",
+          stylers: [{ visibility: "off" }],
+        },
+      ]
+    }
+    return options
+  }, [])
+
+  // Move these hooks above the main useEffect
+  const updateMarker = useCallback((position: { lat: number; lng: number }) => {
+    if (markerRef.current) {
+      if (useAdvancedMarkers) {
+        // For AdvancedMarkerElement
+        ;(markerRef.current as google.maps.marker.AdvancedMarkerElement).position = position
+      } else {
+        // For standard Marker
+        ;(markerRef.current as google.maps.Marker).setPosition(position)
+      }
+    }
+  }, [useAdvancedMarkers])
+
+  const updateRadiusCircle = useCallback((center: { lat: number; lng: number }) => {
+    if (radiusCircle) {
+      radiusCircle.setCenter(center)
+      radiusCircle.setVisible(true)
+    }
+  }, [radiusCircle])
+
+  const geocodeAddress = useCallback(
+    async (addressToGeocode: string) => {
+      if (!addressToGeocode || !geocoderRef.current || !googleMapsLoaded) return
+
+      try {
+        const result = await new Promise<google.maps.GeocoderResponse>((resolve, reject) => {
+          geocoderRef.current?.geocode({ address: addressToGeocode }, (results, status) => {
+            if (status === window.google.maps.GeocoderStatus.OK && results && results.length > 0) {
+              resolve({ results } as google.maps.GeocoderResponse)
+            } else {
+              reject(new Error(`Geocoding failed: ${status}`))
+            }
+          })
+        })
+
+        if (result.results.length > 0) {
+          const location = result.results[0].geometry.location
+          const newCoords = { lat: location.lat(), lng: location.lng() }
+
+          setCoordinates(newCoords)
+          setAddress(result.results[0].formatted_address || "")
+
+          if (googleMapRef.current) {
+            googleMapRef.current.setCenter(newCoords)
+            googleMapRef.current.setZoom(15)
+          }
+
+          updateMarker(newCoords)
+          updateRadiusCircle(newCoords)
+
+          onLocationSelect({
+            address: result.results[0].formatted_address || "",
+            ...newCoords,
+          })
+        } else {
+          setError("Location not found. Please try a different address.")
+        }
+      } catch (err) {
+        console.error("Geocoding error:", err)
+        setError("Error finding location. Please try a different address.")
+      }
+    },
+    [onLocationSelect, googleMapsLoaded, updateMarker, updateRadiusCircle],
+  )
+
   // Load Google Maps API
   useEffect(() => {
     let isMounted = true
@@ -55,9 +149,14 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
         // Load the Google Maps script first
         await loader.load()
 
-        // Now we can access the global google object
+        // Defensive check: Ensure google and DOM refs exist
         if (!window.google || !window.google.maps) {
-          throw new Error("Google Maps failed to load")
+          setError("Google Maps failed to load. Please check your API key and quota.")
+          return
+        }
+        if (!mapRef.current || !searchInputRef.current) {
+          setError("Map container not available. Please reload the page.")
+          return
         }
 
         // Import required libraries
@@ -83,41 +182,26 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
         setGoogleMapsLoaded(true)
         geocoderRef.current = geocoder
 
-        if (!mapRef.current || !searchInputRef.current) return
+        // Check again after async for DOM refs
+        if (!mapRef.current || !searchInputRef.current) {
+          setError("Map container not available. Please reload the page.")
+          return
+        }
 
         // Check if geolocation is available
         setShowMyLocationButton(!!navigator.geolocation)
 
-        // Default to New York City coordinates
-        const defaultLocation = { lat: 40.7128, lng: -74.006 }
-
-        const mapOptions: google.maps.MapOptions = {
-          center: defaultLocation,
-          zoom: 12,
-          mapTypeControl: true,
-          streetViewControl: true,
-          fullscreenControl: true,
-          styles: [
-            {
-              featureType: "poi.business",
-              stylers: [{ visibility: "off" }],
-            },
-            {
-              featureType: "transit",
-              elementType: "labels.icon",
-              stylers: [{ visibility: "off" }],
-            },
-          ],
-        }
-
-        // Add mapId only if it's available
-        if (process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID) {
-          mapOptions.mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID
-        }
-
+        // Use memoized mapOptions
         const map = new Map(mapRef.current, mapOptions)
 
         googleMapRef.current = map
+
+        // Defensive: Ensure Autocomplete constructor exists
+        // TODO: Migrate to PlaceAutocompleteElement before March 2025 (see Google Maps migration guide)
+        if (typeof Autocomplete !== "function") {
+          setError("Google Maps Autocomplete failed to load. Please check your API key and quota.")
+          return
+        }
 
         // Initialize Places Autocomplete
         const autocomplete = new Autocomplete(searchInputRef.current, {
@@ -160,6 +244,12 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
         })
 
         mapListenersRef.current.push(placeChangedListener)
+
+        // Defensive: Only create marker if map is available
+        if (!googleMapRef.current) {
+          setError("Map failed to initialize. Please reload the page.")
+          return
+        }
 
         // Create a marker based on available features
         if (useAdvancedMarkers && AdvancedMarkerElement) {
@@ -213,6 +303,10 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
           markerRef.current = marker
         } else {
           // Use standard marker as fallback
+          if (!window.google.maps.Marker) {
+            setError("Google Maps Marker failed to load. Please check your API key and quota.")
+            return
+          }
           const marker = new window.google.maps.Marker({
             position: defaultLocation,
             map,
@@ -243,6 +337,10 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
         }
 
         // Create radius circle
+        if (!window.google.maps.Circle) {
+          setError("Google Maps Circle failed to load. Please check your API key and quota.")
+          return
+        }
         const circle = new window.google.maps.Circle({
           strokeColor: "#d97706",
           strokeOpacity: 0.8,
@@ -276,10 +374,10 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
         }
 
         setIsLoading(false)
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error loading Google Maps:", err)
         if (isMounted) {
-          setError("Failed to load Google Maps. Please try again later.")
+          setError(err?.message || "Failed to load Google Maps. Please try again later.")
           setIsLoading(false)
         }
       }
@@ -314,74 +412,7 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
       googleMapRef.current = null
       autocompleteRef.current = null
     }
-  }, [initialAddress, onLocationSelect, searchRadius, useAdvancedMarkers, updateMarker, updateRadiusCircle, geocodeAddress])
-
-  // Update marker position
-  const updateMarker = useCallback((position: { lat: number; lng: number }) => {
-    if (markerRef.current) {
-      if (useAdvancedMarkers) {
-        // For AdvancedMarkerElement
-        ;(markerRef.current as google.maps.marker.AdvancedMarkerElement).position = position
-      } else {
-        // For standard Marker
-        ;(markerRef.current as google.maps.Marker).setPosition(position)
-      }
-    }
-  }, [useAdvancedMarkers])
-
-  // Update radius circle
-  const updateRadiusCircle = useCallback((center: { lat: number; lng: number }) => {
-    if (radiusCircle) {
-      radiusCircle.setCenter(center)
-      radiusCircle.setVisible(true)
-    }
-  }, [radiusCircle])
-
-  // Geocode address to coordinates
-  const geocodeAddress = useCallback(
-    async (addressToGeocode: string) => {
-      if (!addressToGeocode || !geocoderRef.current || !googleMapsLoaded) return
-
-      try {
-        const result = await new Promise<google.maps.GeocoderResponse>((resolve, reject) => {
-          geocoderRef.current?.geocode({ address: addressToGeocode }, (results, status) => {
-            if (status === window.google.maps.GeocoderStatus.OK && results && results.length > 0) {
-              resolve({ results } as google.maps.GeocoderResponse)
-            } else {
-              reject(new Error(`Geocoding failed: ${status}`))
-            }
-          })
-        })
-
-        if (result.results.length > 0) {
-          const location = result.results[0].geometry.location
-          const newCoords = { lat: location.lat(), lng: location.lng() }
-
-          setCoordinates(newCoords)
-          setAddress(result.results[0].formatted_address || "")
-
-          if (googleMapRef.current) {
-            googleMapRef.current.setCenter(newCoords)
-            googleMapRef.current.setZoom(15)
-          }
-
-          updateMarker(newCoords)
-          updateRadiusCircle(newCoords)
-
-          onLocationSelect({
-            address: result.results[0].formatted_address || "",
-            ...newCoords,
-          })
-        } else {
-          setError("Location not found. Please try a different address.")
-        }
-      } catch (err) {
-        console.error("Geocoding error:", err)
-        setError("Error finding location. Please try a different address.")
-      }
-    },
-    [onLocationSelect, googleMapsLoaded, updateMarker, updateRadiusCircle],
-  )
+  }, [initialAddress, onLocationSelect, searchRadius, useAdvancedMarkers, mapOptions, geocodeAddress])
 
   // Geocode coordinates to address
   const geocodePosition = useCallback(
