@@ -3,6 +3,8 @@ import { RekognitionClient, CompareFacesCommand, DetectLabelsCommand } from "@aw
 import { createClient } from "@supabase/supabase-js"
 import type { Pet, PetMatch } from "./types"
 import { calculateDistance } from "./map-utils"
+import { GetObjectCommand } from "@aws-sdk/client-s3"
+import { generatePetDescriptionFromImage } from "./gemini"
 
 // Initialize AWS clients
 const s3Client = new S3Client({
@@ -153,6 +155,8 @@ export async function getPetMatches(searchId: string): Promise<{ originalPet: Pe
           const originalImageKey = getS3KeyFromUrl(originalPet.imageUrl)
           const matchImageKey = getS3KeyFromUrl(match.image_url)
 
+          let geminiScore = null
+
           if (originalImageKey && matchImageKey) {
             // Try face comparison first (works well for some pets with distinct facial features)
             try {
@@ -243,6 +247,58 @@ export async function getPetMatches(searchId: string): Promise<{ originalPet: Pe
               } else {
                 matchConfidence = labelSimilarity
               }
+            }
+
+            // --- Gemini image understanding integration ---
+            try {
+              // Helper to fetch S3 object and convert to base64
+              async function getS3ImageBase64(key: string): Promise<string | null> {
+                const obj = await s3Client.send(new GetObjectCommand({
+                  Bucket: process.env.AWS_S3_BUCKET_NAME,
+                  Key: key,
+                }))
+                const arrayBuffer = await obj.Body?.transformToByteArray()
+                if (!arrayBuffer) return null
+                const base64 = Buffer.from(arrayBuffer).toString("base64")
+                return base64
+              }
+
+              const [originalBase64, matchBase64] = await Promise.all([
+                getS3ImageBase64(originalImageKey),
+                getS3ImageBase64(matchImageKey),
+              ])
+
+              if (originalBase64 && matchBase64) {
+                // Use Gemini to generate pet descriptions/tags for both images
+                const [originalDesc, matchDesc] = await Promise.all([
+                  generatePetDescriptionFromImage(originalBase64),
+                  generatePetDescriptionFromImage(matchBase64),
+                ])
+                // Extract tags from Gemini output (expects "Tags: ...")
+                function extractTags(desc: string): string[] {
+                  const match = desc.match(/Tags:\s*(.*)/i)
+                  if (match && match[1]) {
+                    return match[1].split(",").map((t) => t.trim().toLowerCase())
+                  }
+                  return []
+                }
+                const originalTags = extractTags(originalDesc)
+                const matchTags = extractTags(matchDesc)
+                // Calculate tag overlap (Jaccard similarity)
+                const setA = new Set(originalTags)
+                const setB = new Set(matchTags)
+                const intersection = new Set([...setA].filter((x) => setB.has(x)))
+                const union = new Set([...setA, ...setB])
+                geminiScore = union.size > 0 ? intersection.size / union.size : 0
+              }
+            } catch (geminiError) {
+              console.error("Gemini image understanding failed:", geminiError)
+              geminiScore = null
+            }
+
+            // Blend Rekognition and Gemini scores if both are available
+            if (geminiScore !== null) {
+              matchConfidence = matchConfidence * 0.6 + geminiScore * 0.4
             }
           }
         } catch (error) {
