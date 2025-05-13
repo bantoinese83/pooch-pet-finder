@@ -294,7 +294,7 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
           `
 
           const marker = new AdvancedMarkerElement({
-            position: defaultLocation,
+            position: mapOptions.center,
             map,
             content: markerElement,
             title: "Pet Location",
@@ -308,7 +308,7 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
             return
           }
           const marker = new window.google.maps.Marker({
-            position: defaultLocation,
+            position: mapOptions.center,
             map,
             icon: {
               path: window.google.maps.SymbolPath.CIRCLE,
@@ -348,7 +348,7 @@ export function LocationMap({ onLocationSelect, initialAddress = "" }: LocationM
           fillColor: "#d97706",
           fillOpacity: 0.1,
           map,
-          center: defaultLocation,
+          center: mapOptions.center,
           radius: searchRadius,
           visible: false,
         })
